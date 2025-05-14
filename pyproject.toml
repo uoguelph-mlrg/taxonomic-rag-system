@@ -1,13 +1,20 @@
 [project]
-name = "aieng-template-uv"
+name = "taxonomic-rag-system"
 version = "0.1.0"
-description = "Add your description here"
+description = "A taxonomic system using image captioining and RAG"
 readme = "README.md"
-authors = [ {name = "Vector AI Engineering", email = "ai_engineering@vectorinstitute.ai"}]
+authors = [ {name = "Nate Lesperance", email = "lesperan@uoguelph.ca"}]
 license = "Apache-2.0"
-repository = "https://github.com/VectorInstitute/aieng-template-uv"
+repository = "https://github.com/uoguelph-mlrg/taxonomic-rag-system"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "backoff>=2.2.1",
+    "instructor>=1.7.9",
+    "pillow>=11.2.1",
+    "pydantic>=2.11.3",
+    "ragas>=0.2.15",
+    "scikit-learn>=1.6.1",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -15,7 +22,6 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
-    "codecov>=2.1.13",
     "mypy>=1.14.1",
     "nbqa>=1.9.1",
     "pip-audit>=2.7.3",
@@ -41,6 +47,7 @@ docs = [
 default-groups = ["dev", "docs"]
 
 [tool.mypy]
+mypy_path = "src"
 ignore_missing_imports = true
 install_types = true
 pretty = true
@@ -49,12 +56,12 @@ explicit_package_bases = true
 non_interactive = true
 warn_unused_configs = true
 allow_any_generics = false
-allow_subclassing_any = false
-allow_untyped_calls = false
+allow_subclassing_any = true
+allow_untyped_calls = true
 allow_untyped_defs = false
 allow_incomplete_defs = false
 check_untyped_defs = true
-allow_untyped_decorators = false
+allow_untyped_decorators = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 warn_return_any = true
@@ -123,7 +130,13 @@ markers = [
     "integration_test: marks tests as integration tests",
 ]
 
-[tool.coverage]
-    [tool.coverage.run]
-    source=["aieng_template"]
-    omit=["tests/*", "*__init__.py"]
+[tool.typos]
+files.extend-exclude = [
+  '**/data/**',
+  '**/*.log'
+]
+
+# Ensure py.typed is included
+[tool.hatch.build.targets.wheel.shared-data]
+"src/taxonomic_rag_system/py.typed" = "taxonomic_rag_system/py.typed"
+
