@@ -1,17 +1,13 @@
-# AI Engineering template (with uv)
+# Taxonomic RAG System
 
 ----------------------------------------------------------------------------------------
 
-[![code checks](https://github.com/VectorInstitute/aieng-template-uv/actions/workflows/code_checks.yml/badge.svg)](https://github.com/VectorInstitute/aieng-template-uv/actions/workflows/code_checks.yml)
-[![integration tests](https://github.com/VectorInstitute/aieng-template-uv/actions/workflows/integration_tests.yml/badge.svg)](https://github.com/VectorInstitute/aieng-template-uv/actions/workflows/integration_tests.yml)
-[![docs](https://github.com/VectorInstitute/aieng-template-uv/actions/workflows/docs.yml/badge.svg)](https://github.com/VectorInstitute/aieng-template-uv/actions/workflows/docs.yml)
-[![codecov](https://codecov.io/github/VectorInstitute/aieng-template-uv/graph/badge.svg?token=83MYFZ3UPA)](https://codecov.io/github/VectorInstitute/aieng-template-uv)
-![GitHub License](https://img.shields.io/github/license/VectorInstitute/aieng-template-uv)
+[![code checks](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/code_checks.yml/badge.svg)](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/code_checks.yml)
+[![integration tests](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/integration_tests.yml/badge.svg)](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/integration_tests.yml)
+[![docs](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/docs.yml/badge.svg)](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/docs.yml)
+![GitHub License](https://img.shields.io/github/license/uoguelph-mlrg/taxonomic-rag-system)
 
-A template repo for AI Engineering projects (using ``python``) and ``uv``. This
-template is like our original AI Engineering [template](https://github.com/VectorInstitute/aieng-template),
-however, unlike how that template uses poetry, this one uses uv for dependency
-management (as well as packaging and publishing).
+A system for taxonomic classification and biodiversity analysis using Retrieval-Augmented Generation (RAG) and Vision-Language Models (VLMs). This repository contains the implementation of experiments presented in [Taxonomic Reasoning of Rare Arthropods: Combinging Dense Image Captioning with RAG for Interpretable Classification](https://arxiv.org/abs/2503.10886), part of the Canadian AI 2025 Conference proceedings.
 
 ## 🧑🏿‍💻 Developing
 
@@ -34,40 +30,82 @@ uv sync --dev
 source .venv/bin/activate
 ```
 
-In order to exclude installation of packages from a specific group (e.g. docs),
-run:
+### Prerequisites
+
+Replicating experiments require an OpenAI API key, Cohere API key, and OpenRouter API key for the vision and language models. The scripts expect files in your home directory (called `.openai.key`, `.cohere.key`, `.openrouter.key`, respectively) that contain your keys. 
+
+You can set up those files on the command line with your own API keys using the following:
+
+Note: Below are EXAMPLE API keys and should be replaced with your actual keys.
 
 ```bash
-uv sync --no-group docs
+# Ex OPENAI's apikey = "sk-1234567890abcdefg"
+cat "sk-1234567890abcdefg" > $HOME/.openai.key
+
+# Ex Cohere's apikey = "cohere-1234567890abcdefg"
+cat "cohere-1234567890abcdefg" > $HOME/.cohere.key
+
+# Ex OpenRouter's apikey = "openrouter-1234567890abcdefg"
+cat "openrouter-1234567890abcdefg" > $HOME/.openrouter.key
 ```
 
-If you're coming from `poetry` then you'll notice that the virtual environment
-is actually stored in the project root folder and is by default named as `.venv`.
-The other important note is that while `poetry` uses a "flat" layout of the project,
-`uv` opts for the the "src" layout. (For more info, see [here](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/))
+##
 
-### Poetry to UV
+### Running Experiments
 
-The table below provides the `uv` equivalent counterparts for some of the more
-common `poetry` commands.
+This repository contains experiments for taxonomic classification and biodiversity analysis. 
 
-| Poetry                                               | UV                                          |
-|------------------------------------------------------|---------------------------------------------|
-| `poetry new <project-name>`  # creates new project   | `uv init <project-name>`                    |
-| `poetry install`  # installs existing project        | `uv sync`                                   |
-| `poetry install --with docs,test`                    | `uv sync --group docs --group test`         |
-| `poetry add numpy`                                   | `uv add numpy`                              |
-| `poetry add pytest pytest-asyncio --groups dev`      | `uv add pytest pytest-asyncio --groups dev` |
-| `poetry remove numpy`                                | `uv remove numpy`                           |
-| `poetry lock`                                        | `uv lock`                                   |
-| `poetry run <cmd>`  # runs cmd with the project venv | `uv run <cmd>`                              |
-| `poetry build`                                       | `uv build`                                  |
-| `poetry publish`                                     | `uv publish`                                |
-| `poetry cache clear pypi --all`                      | `uv cache clean`                            |
+The experiments are implemented in the `runs` module but rely on the `utils`, `core` and `preprocess` modules.
 
-For the full list of `uv` commands, you can visit the official [docs](https://docs.astral.sh/uv/reference/cli/#uv).
+#### Preprocessing
 
-### Tidbit
+To preprocess datasets for experiments, use the preprocessing utilities in the `preprocess` module.
+Assuming the docuuments used to build the vectorstore are in `data/documents/` and you'd like to build the vectorstore to persist in `data/vstore`, you can run the following command to chunk, contextualize and vectorize the documents: 
 
-If you're curious about what "uv" stands for, it appears to have been more or
-less chosen [randomly](https://github.com/astral-sh/uv/issues/1349#issuecomment-1986451785).
+```bash
+python src/taxonomic_rag_system/preprocess/chunk_vectorize.py --source "data/documents" --pers_dir "data/vstore" --contextualize --write
+```
+
+This script will chunk, contextualize and filter the doc sources you provide (in the paper, >250K docs from Wikipedia and Wikispecies pages for Animalia) and then build a ChromaDB vector database from the informative chunks (in the paper, >550K informative chunks).
+
+#### Utilities
+
+The `utils` module provides helper functions and classes for tasks such as:
+- Document retrieval and formatting (`retriever.py`)
+- Multimodal caption and tax classification generation (`vision_models.py`)
+- Dataset loading, evaluation and reporting (`helpers.py`, `evaluator.py`)
+- Image processsing (`image_processing.py`)
+
+## 
+
+#### Rare Species Dataset Experiments
+
+To run experiments on the rare species dataset, use the following scripts:
+
+1. **Simple RAG Model**:
+   ```bash
+   python src/taxonomic_rag_system/runs/rare_species_simp_rag.py
+   ```
+   
+2. **Advanced RAG Model**:
+   ```bash
+   python src/taxonomic_rag_system/runs/rare_species_adv_rag.py
+   ```
+
+3. **Naive Vision-Language Model - GPT-4o**:
+   ```bash
+   python src/taxonomic_rag_system/runs/rare_species_naive_gpt.py
+   ```
+
+4. **Naive Vision-Language Model - Gemini 2.0 Flash**:
+   ```bash
+   python src/taxonomic_rag_system/runs/rare_species_naive_gemini.py
+   ```
+
+##
+
+### Results
+
+The results of the experiments, including taxonomic classifications and evaluation metrics, are saved as CSV files in the specified output directory:
+- Itemized classification predictions: `RS_<model>_predictions_<date>_<time>.csv`
+- Rank-wise classification metrics: `RS_<model>_tax_metrics_<date>_<time>.csv`
