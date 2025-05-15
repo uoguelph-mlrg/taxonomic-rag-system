@@ -25,6 +25,7 @@ Dependencies:
 
 import os
 from pathlib import Path
+from typing import Any
 
 import torch
 from langchain.output_parsers import PydanticOutputParser
@@ -32,6 +33,7 @@ from langchain.retrievers import ContextualCompressionRetriever
 from langchain.retrievers.document_compressors import CohereRerank
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
+from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_openai import ChatOpenAI
@@ -58,7 +60,7 @@ class RAGChainBuilder:
     and taxonomic classification generation based on a caption and additional context.
     """
 
-    def __init__(self, retriever):
+    def __init__(self, retriever: Any):
         """
         Initialize RAGChainBuilder with a retriever.
 
@@ -98,7 +100,7 @@ class RAGChainBuilder:
         self.prompt = self._prompt_construction()
         self.rag_chain = self._build_chain(retriever)
 
-    def _prompt_construction(self):
+    def _prompt_construction(self) -> PromptTemplate:
         """
         Construct the prompt template required for taxonomic classification tasks.
 
@@ -112,7 +114,7 @@ class RAGChainBuilder:
             },
         )
 
-    def _build_chain(self, retriever):
+    def _build_chain(self, retriever: Any) -> Any:
         """
         Construct a RAG chain using the provided retriever and a prompt.
 
@@ -125,7 +127,7 @@ class RAGChainBuilder:
             | self.output_parser
         )
 
-    def invoke(self, inp):
+    def invoke(self, inp: dict[str, Any]) -> Any:
         """
         Invoke the RAG chain synchronously with the given input.
 
@@ -134,7 +136,7 @@ class RAGChainBuilder:
         """
         return self.rag_chain.invoke(input=inp)
 
-    async def ainvoke(self, inp):
+    async def ainvoke(self, inp: dict[str, Any]) -> Any:
         """
         Invoke the RAG chain asynchronously with the given input.
 
@@ -147,7 +149,13 @@ class RAGChainBuilder:
 class BaseRetriever:
     """Base class for document retriever against a Chroma collection."""
 
-    def __init__(self, collection_name, embedding_model, search_type, k):
+    def __init__(
+        self,
+        collection_name: str,
+        embedding_model: str,
+        search_type: str,
+        k: int,
+    ):
         """
         Initialize a BaseRetriever for document retrieval with additional params.
 
@@ -200,7 +208,7 @@ class WikiStellaRAGModel(BaseRetriever):
             k=k,
         )
         self.vectorstore = self._set_up_retriever(vstore_path)
-        self.retriever = self.vectorstore.as_retriever(
+        self.retriever: Any = self.vectorstore.as_retriever(
             search_type=self.search_type, search_kwargs={"k": self.k}
         )
         if multiquery:
@@ -209,7 +217,7 @@ class WikiStellaRAGModel(BaseRetriever):
             self._add_reranker()
         self.model = RAGChainBuilder(self.retriever)
 
-    def _set_up_retriever(self, vstore_path):
+    def _set_up_retriever(self, vstore_path: str) -> Chroma:
         """
         Set up the vector store retriever.
 
@@ -243,7 +251,7 @@ class WikiStellaRAGModel(BaseRetriever):
         compression_retriever = ContextualCompressionRetriever(
             base_compressor=compressor, base_retriever=self.retriever
         )
-        self.retriever = compression_retriever
+        self.retriever: Any = compression_retriever
 
     def _add_multiquery(self) -> None:
         """
@@ -283,9 +291,9 @@ class WikiStellaRAGModel(BaseRetriever):
             | (lambda x: x.queries)
         )
         # Redefine retriever to use union of output from multiple retrievals
-        self.retriever = generate_queries | self.retriever.map() | unique_docs
+        self.retriever: Any = generate_queries | self.retriever.map() | unique_docs
 
-    def retrieve(self, caption):
+    def retrieve(self, caption: str) -> list[Document]:
         """
         Retrieve documents using configured retriever with a caption.
 
@@ -294,7 +302,7 @@ class WikiStellaRAGModel(BaseRetriever):
         """
         return self.retriever.invoke(input=caption)
 
-    async def aretrieve(self, caption):
+    async def aretrieve(self, caption: str) -> list[Document]:
         """
         Asynchronously retrieves documents using configured retriever with a caption.
 
@@ -303,7 +311,7 @@ class WikiStellaRAGModel(BaseRetriever):
         """
         return await self.retriever.ainvoke(input=caption)
 
-    def invoke(self, caption):
+    def invoke(self, caption: str) -> TaxBiodiversity:
         """
         Invoke the RAG model synchronously using the given caption.
 
@@ -312,7 +320,7 @@ class WikiStellaRAGModel(BaseRetriever):
         """
         return self.model.invoke(input=caption)
 
-    async def ainvoke(self, caption):
+    async def ainvoke(self, caption: str) -> TaxBiodiversity:
         """
         Invoke the RAG model asynchronously using the given caption.
 

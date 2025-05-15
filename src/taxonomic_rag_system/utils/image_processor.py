@@ -12,6 +12,8 @@ Methods
         and returns its base64-encoded string.
 """
 
+from typing import Any, Optional
+
 from .helpers import imgfile_tob64, imgurl_tob64, pilimg_tob64
 
 
@@ -23,11 +25,15 @@ class ImageProcessor:
     Static method to convert images into base64-encoded strings.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         pass
 
     @staticmethod
-    def process_image(image_url=None, image_obj=None, image_path=None):
+    def process_image(
+        image_url: Optional[str] = None,
+        image_obj: Optional[Any] = None,
+        image_path: Optional[str] = None,
+    ) -> str:
         """
         Process an image and convert it into a base64-encoded string.
 

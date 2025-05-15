@@ -33,7 +33,7 @@ To prepare a vectorstore from documents, use the `chunk_vectorize.py` script:
 python src/taxonomic_rag_system/preprocess/chunk_vectorize.py --source <source_directory> --pers_dir <persistence_directory> --contextualize --write
 ```
 - `--source`: Path to the directory containing document sources.
-- `--pers_dir`: Path to the persistant directory for the vector store.
+- `--pers_dir`: Path to the persistent directory for the vector store.
 - `--contextualize`: Flag to enable contextualization of documents (using OpenAI's gpt-4o-mini).
 - `--write`: Flag to save the processed data.
 
@@ -44,7 +44,7 @@ python src/taxonomic_rag_system/preprocess/chunk_vectorize.py --source <source_d
    python src/taxonomic_rag_system/runs/rare_species_simp_rag.py --output <output_directory> --vstore <persistence_directory> --write
    ```
    - `--output`: Path to save the results.
-   - `--vstore`: Path to the persistant directory for the vector store.
+   - `--vstore`: Path to the persistent directory for the vector store.
    - `--write`: Flag to save the results.
 
 2. **Naive Vision-Language Model - Gemini 2.0 Flash**:
@@ -59,4 +59,3 @@ python src/taxonomic_rag_system/preprocess/chunk_vectorize.py --source <source_d
 The results of the experiments are saved as CSV files in the specified `output_directory`:
 - Predictions: `RS_<model>_predictions_<date>_<time>.csv`
 - Metrics: `RS_<model>_tax_metrics_<date>_<time>.csv`
-

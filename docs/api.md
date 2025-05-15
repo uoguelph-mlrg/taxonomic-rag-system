@@ -18,7 +18,7 @@ The `utils` module provides helper functions and classes for various tasks, incl
 **Dataset Loading, Evaluation, and Reporting**:
   - `helpers.py`: Compute metrics (e.g., accuracy, F1 scores), generate classification reports, and export results to CSV.
   - `evaluator.py`: Load and build dataloaders from rare species dataset and evaluate classification performance.
-  
+
   **Image Processing**:
   - `image_processing.py`: Handle image conversions (e.g., Base64, PIL).
 
@@ -52,9 +52,9 @@ The `runs` module provides scripts for executing experiments from the paper incl
   - `rare_species_naive_gemini.py`: Inference with Gemini 2.0 Flash with OpenRouter for taxonomic reasoning and classifier of images in rare species dataset.
 
 **RAG Model**:
-  - `rare_species_simp_rag.py`: Inference with Simple RAG Model using OpenAI for taxonomic reasoning and classifier of images in rare species dataset, using Wikipedia and Wikispecies documents. 
+  - `rare_species_simp_rag.py`: Inference with Simple RAG Model using OpenAI for taxonomic reasoning and classifier of images in rare species dataset, using Wikipedia and Wikispecies documents.
 
-Example usage: 
+Example usage:
 ```bash
 python src/taxonomic_rag_system/runs/rare_species_simp_rag.py --output <output_directory> --vstore <persistence_directory> --write
 ```

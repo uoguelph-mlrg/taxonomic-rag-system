@@ -24,6 +24,15 @@ Functions:
     - _filtered_load_up(path): Loads documents using FilteringCustomLoader, excluding
       already processed ones.
     - main(): Main entry point for the script, handling argument parsing and execution.
+
+Usage:
+```bash
+python chunk_vectorize.py \
+    --source <source_directory> \
+    --output_path <output_directory> \
+    --pers_dir <persistence_directory> \
+    --contextualize --write
+```
 """
 
 import argparse
@@ -32,7 +41,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Optional, Tuple
 
 import instructor
 import torch
@@ -52,7 +61,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def _load_up(path: str):
+def _load_up(path: str) -> list[Document]:
     docs = []
     loader = DirectoryLoader(
         path, glob="*.txt", recursive=True, use_multithreading=True
@@ -69,7 +78,7 @@ async def contextual_retrieval_load(
     output_path: str,
     source: str = "",
     write: bool = True,
-):
+) -> Tuple[list[Chunk], list[Chunk]]:
     """
     Chunk, contextualize and categorize document lists.
 
@@ -110,9 +119,7 @@ async def contextual_retrieval_load(
     for doc in dox:
         filename = doc["metadata"]["source"].split("/")[-1].replace(".txt", "")
         for i, chunk in enumerate(doc["chunks"]):
-            response = await contextualize(
-                chunk.page_content, doc["page_content"], client
-            )
+            response = await contextualize(chunk.page_content, doc.page_content, client)
             chunk_total += 1
             chunk.page_content = f"{chunk.page_content}\n\n{response.contextual_text}"
             if response.useful:
@@ -132,7 +139,7 @@ async def no_contextual_retrieval_load(
     docs: list[Document],
     output_path: str,
     write: bool = True,
-):
+) -> list[Chunk]:
     """
     Chunk, contextualize and categorize document lists.
 
@@ -178,7 +185,7 @@ async def no_contextual_retrieval_load(
     return useful_chunks
 
 
-def pretty_print_chunks(use, notuse):
+def pretty_print_chunks(use: list[Chunk], notuse: list[Chunk]) -> None:
     """Log examples of useful and non-useful chunks from contextual embeddings."""
     for chunk in use[0:10]:
         logger.info("=" * 100)
@@ -226,7 +233,7 @@ class FilteringCustomLoader(BaseLoader):
             Lazily loads and yields `Document` objects of files that pass filter.
     """
 
-    def __init__(self, file_path: str, output_path: str = None):
+    def __init__(self, file_path: str, output_path: Optional[str] = None):
         self.file_path = file_path
         if output_path is None:
             output_path = self.file_path
@@ -365,12 +372,9 @@ async def contextualize(
     return resp
 
 
-def _filtered_load_up(
-    path: str,
-    output_path: str = None,
-) -> list[Document]:
-    docs = []
-    loader = FilteringCustomLoader(file_path=path, output_path=output_path)
+def _filtered_load_up(path: str, output_path: Optional[str] = None) -> list[Document]:
+    docs: list[Document] = []
+    loader = FilteringCustomLoader(file_path=path, output_path=output_path or "")
     docs.extend(loader.lazy_load())
     logger.info(
         "Documents loaded with Custom Loader, not including those already created, moving to chunking..."
@@ -381,17 +385,17 @@ def _filtered_load_up(
 
 def build_vectorstore_from(
     docs: list[Document],
-    persistance_dir: str,
+    persistence_dir: str,
     embedding_model: str = "dunzhang/stella_en_1.5B_v5",
     collection_name: str = "Wiki_contexted",
     verbose: bool = True,
-):
+) -> None:
     """
     Build or update a vectorstore from a list of documents using an embedding model.
 
     Args:
         docs (list[Document]): A list of docs to be embedded and added to vectorstore.
-        persistance_dir (str): The directory where the vectorstore will be persisted.
+        persistence_dir (str): The directory where the vectorstore will be persisted.
         embedding_model (str, optional): Defaults to "dunzhang/stella_en_1.5B_v5".
         collection_name (str, optional): Defaults to "Wiki_contexted".
         verbose (bool, optional): Display progress and debug info. Defaults to True.
@@ -424,12 +428,11 @@ def build_vectorstore_from(
         # Attempt to load the collection
         vectorstore = Chroma(
             collection_name=collection_name,
-            persist_directory=persistance_dir,
+            persist_directory=persistence_dir,
             embedding_function=embeddings,
         )
         print(f"Collection '{collection_name}' exists. Adding documents to it.")
-        for split_docs_chunk in docs:
-            vectorstore.add_documents(split_docs_chunk)
+        vectorstore.add_documents(docs)
     except ValueError:
         # If the collection does not exist, create a new one
         print(
@@ -439,11 +442,11 @@ def build_vectorstore_from(
             docs,
             embedding_function=embeddings,
             collection_name=collection_name,
-            persist_directory=persistance_dir,
+            persist_directory=persistence_dir,
         )
 
 
-def parse_arguments():
+def parse_arguments() -> argparse.Namespace:
     """
     Parse command-line arguments for the script.
 
@@ -486,7 +489,7 @@ def parse_arguments():
     return parser.parse_args()
 
 
-async def main():
+async def main() -> None:
     """
     Preprocess and/or contextualize document chunks, then build vectorstore from them.
 
@@ -530,15 +533,12 @@ async def main():
         pretty_print_chunks(use, notuse)
     else:
         logger.info("Skipping contextualization step.")
-        use = no_contextual_retrieval_load(
-            documents,
-            output_path=output_path,
-            source=source,
-            write=write,
+        use = await no_contextual_retrieval_load(
+            documents, output_path=output_path, write=write
         )
     build_vectorstore_from(
         use,
-        persistance_dir=pers_dir,
+        persistence_dir=pers_dir,
         embedding_model="dunzhang/stella_en_1.5B_v5",
         collection_name=f"Wiki_{['un', ''][contextualize]}contexted",
     )

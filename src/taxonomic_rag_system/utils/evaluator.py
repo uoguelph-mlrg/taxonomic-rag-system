@@ -20,6 +20,8 @@ process_row(row)
     extracting relevant details and handling errors gracefully.
 """
 
+from typing import Any, Dict, Tuple
+
 from datasets import load_dataset
 from torch.utils.data import DataLoader, Dataset
 
@@ -45,11 +47,11 @@ class RareSpeciesImageClassDataset(Dataset):
         index.
     """
 
-    def __init__(self):
-        self.img_output_pairs = []
+    def __init__(self) -> None:
+        self.img_output_pairs: list[Tuple[Any, Dict[str, Any]]] = []
         self._set_up()
 
-    def _set_up(self):
+    def _set_up(self) -> None:
         # Load the dataset from HuggingFace
         ds = load_dataset("imageomics/rare-species")
         ds = ds["train"].select(range(0, 999))
@@ -67,7 +69,7 @@ class RareSpeciesImageClassDataset(Dataset):
             zip(processed_ds["image"], processed_ds["class_dict"])
         )
 
-    def __len__(self):
+    def __len__(self) -> int:
         """
         Return the number of image-output pairs in the evaluator.
 
@@ -77,7 +79,7 @@ class RareSpeciesImageClassDataset(Dataset):
         """
         return len(self.img_output_pairs)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Tuple[Any, Dict[str, Any]]:
         """
         Retrieve the image object and class dictionary at the specified index.
 
@@ -105,11 +107,11 @@ class RareSpeciesEvaluator:
             The dataset containing images of rare species.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the RareSpeciesEvaluator with a dataset of rare species images."""
         self.dataset = RareSpeciesImageClassDataset()
 
-    def dataloader(self, batch_size: int = 16):
+    def dataloader(self, batch_size: int = 16) -> DataLoader:
         """
         Create a dataloader for the rare species dataset.
 
@@ -128,7 +130,7 @@ class RareSpeciesEvaluator:
         )
 
 
-def process_row(row):
+def process_row(row: Dict[str, Any]) -> Dict[str, Any]:
     """
     Process a single row of a dataset containing image and taxonomic information.
 

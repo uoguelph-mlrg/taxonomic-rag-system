@@ -8,8 +8,8 @@ Classes:
 --------
 - VLM: A base class for vision-language models.
 - InstructorVLModel: A base class for VLMs with instructor integration.
-- TaxClassifierVLM: A model for generating taxonomic classifications of organisms.
-- DescriptiveCaptioner: A model for generating detailed captions for images of organisms.
+- TaxClassifierVLM: A model generating taxonomic classifications of organisms.
+- DescriptiveCaptioner: A model generating detailed captions for images of organisms.
 
 Dependencies:
 -------------
@@ -34,6 +34,7 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Any, Optional
 
 import instructor
 from openai import AsyncOpenAI
@@ -63,7 +64,7 @@ class VLM:
         temp: The temperature setting for generation.
     """
 
-    def __init__(self, cap, model, temp):
+    def __init__(self, cap: Any, model: str, temp: float) -> None:
         self.cap = cap
         self.model = model
         self.temp = temp
@@ -83,7 +84,7 @@ class InstructorVLModel(VLM):
         temp: The temperature setting for generation randomness.
     """
 
-    def __init__(self, cap, model, temp):
+    def __init__(self, cap: Any, model: str, temp: float) -> None:
         super().__init__(cap, model, temp)
         self.client = instructor.from_openai(self.cap)
 
@@ -110,11 +111,8 @@ class TaxClassifierVLM(VLM):
     """
 
     def __init__(
-        self,
-        cap=None,
-        model="google/gemini-2.0-flash-001",
-        temp=0,
-    ):
+        self, cap: Any, model: str, temp: float, additional_param: Optional[str] = None
+    ) -> None:
         if cap is None:
             cap = AsyncOpenAI(
                 base_url="https://openrouter.ai/api/v1",
@@ -151,7 +149,7 @@ class TaxClassifierVLM(VLM):
             + "..." * 256
         )
 
-    async def generate_taxonomy(self, image_b64) -> dict[str, str]:
+    async def generate_taxonomy(self, image_b64: str) -> dict[str, str]:
         """
         Generate a taxonomic classification for the primary organism in the image.
 
@@ -176,7 +174,7 @@ class TaxClassifierVLM(VLM):
                 "Species": "N/A",
             }
 
-    async def _taxonomist(self, image_b64) -> dict[str, str]:
+    async def _taxonomist(self, image_b64: str) -> dict[str, str]:
         """
         Parse base64 image to taxonomic classification.
 
@@ -247,11 +245,8 @@ class DescriptiveCaptioner(InstructorVLModel):
     """
 
     def __init__(
-        self,
-        cap=None,
-        model="gpt-4o",
-        temp=0,
-    ):
+        self, cap: Any, model: str, temp: float, additional_param: Optional[str] = None
+    ) -> None:
         if cap is None:
             cap = AsyncOpenAI()
         super().__init__(cap, model, temp)
@@ -281,7 +276,7 @@ class DescriptiveCaptioner(InstructorVLModel):
             + "..." * 256
         )
 
-    async def generate_caption(self, image_b64):
+    async def generate_caption(self, image_b64: str) -> str:
         """
         Generate a detailed biocaption for the image.
 
@@ -298,7 +293,7 @@ class DescriptiveCaptioner(InstructorVLModel):
             print(f"Error during caption generation: {e}")
             return ""
 
-    async def _caption(self, image_b64):
+    async def _caption(self, image_b64: str) -> str:
         """
         Process image with VLM to generate captions.
 

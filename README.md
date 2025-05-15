@@ -32,7 +32,7 @@ source .venv/bin/activate
 
 ### Prerequisites
 
-Replicating experiments require an OpenAI API key, Cohere API key, and OpenRouter API key for the vision and language models. The scripts expect files in your home directory (called `.openai.key`, `.cohere.key`, `.openrouter.key`, respectively) that contain your keys. 
+Replicating experiments require an OpenAI API key, Cohere API key, and OpenRouter API key for the vision and language models. The scripts expect files in your home directory (called `.openai.key`, `.cohere.key`, `.openrouter.key`, respectively) that contain your keys.
 
 You can set up those files on the command line with your own API keys using the following:
 
@@ -53,14 +53,14 @@ cat "openrouter-1234567890abcdefg" > $HOME/.openrouter.key
 
 ### Running Experiments
 
-This repository contains experiments for taxonomic classification and biodiversity analysis. 
+This repository contains experiments for taxonomic classification and biodiversity analysis.
 
 The experiments are implemented in the `runs` module but rely on the `utils`, `core` and `preprocess` modules.
 
 #### Preprocessing
 
 To preprocess datasets for experiments, use the preprocessing utilities in the `preprocess` module.
-Assuming the docuuments used to build the vectorstore are in `data/documents/` and you'd like to build the vectorstore to persist in `data/vstore`, you can run the following command to chunk, contextualize and vectorize the documents: 
+Assuming the docuuments used to build the vectorstore are in `data/documents/` and you'd like to build the vectorstore to persist in `data/vstore`, you can run the following command to chunk, contextualize and vectorize the documents:
 
 ```bash
 python src/taxonomic_rag_system/preprocess/chunk_vectorize.py --source "data/documents" --pers_dir "data/vstore" --contextualize --write
@@ -74,9 +74,9 @@ The `utils` module provides helper functions and classes for tasks such as:
 - Document retrieval and formatting (`retriever.py`)
 - Multimodal caption and tax classification generation (`vision_models.py`)
 - Dataset loading, evaluation and reporting (`helpers.py`, `evaluator.py`)
-- Image processsing (`image_processing.py`)
+- Image processing (`image_processing.py`)
 
-## 
+##
 
 #### Rare Species Dataset Experiments
 
@@ -86,7 +86,7 @@ To run experiments on the rare species dataset, use the following scripts:
    ```bash
    python src/taxonomic_rag_system/runs/rare_species_simp_rag.py --output <output_directory> --vstore <persistence_directory> --write
    ```
-   
+
 2. **Advanced RAG Model**:
    ```bash
    python src/taxonomic_rag_system/runs/rare_species_adv_rag.py

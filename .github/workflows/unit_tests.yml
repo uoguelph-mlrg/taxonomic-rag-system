@@ -61,4 +61,3 @@ jobs:
       - name: Install dependencies and check code
         run: |
           uv run pytest -m "not integration_test" --cov src/taxonomic_rag_system --cov-report=xml tests
-

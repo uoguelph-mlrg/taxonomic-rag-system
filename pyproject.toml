@@ -139,4 +139,3 @@ files.extend-exclude = [
 # Ensure py.typed is included
 [tool.hatch.build.targets.wheel.shared-data]
 "src/taxonomic_rag_system/py.typed" = "taxonomic_rag_system/py.typed"
-

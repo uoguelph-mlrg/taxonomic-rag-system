@@ -46,7 +46,7 @@ from taxonomic_rag_system.utils.helpers import (
 )
 
 
-def _parse_arguments():
+def _parse_arguments() -> argparse.Namespace:
     """
     Parse command-line arguments for the script.
 
@@ -77,7 +77,7 @@ def _parse_arguments():
     return parser.parse_args()
 
 
-async def main():
+async def main() -> None:
     """
     Execute the Naive VLM run for rare species predictions with output metrics.
 

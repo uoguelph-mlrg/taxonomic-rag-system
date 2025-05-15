@@ -55,11 +55,13 @@ import base64
 import csv
 import sys
 from io import BytesIO
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
 import requests
 from langchain.load import dumps, loads
+from langchain_core.documents import Document
 from langchain_openai import ChatOpenAI
 from PIL import Image
 from ragas.dataset_schema import SingleTurnSample
@@ -70,7 +72,7 @@ from sklearn.metrics import accuracy_score, f1_score
 from sklearn.preprocessing import LabelEncoder
 
 
-def format_context(docs: list) -> str:
+def format_context(docs: List[Document]) -> str:
     """
     Format documents for pretty and informative output.
 
@@ -98,7 +100,7 @@ def format_context(docs: list) -> str:
     return f"\n{'-' * 100}\n".join(out)
 
 
-def format_docs(docs: list) -> str:
+def format_docs(docs: List[Document]) -> str:
     """
     Format context for input into an LLM prompt.
 
@@ -108,7 +110,7 @@ def format_docs(docs: list) -> str:
     return "\n\n".join(f"{doc.metadata.items()}\n{doc.page_content}" for doc in docs)
 
 
-def unique_docs(docs: list[list]) -> list:
+def unique_docs(docs: List[List[Document]]) -> List[Document]:
     """
     Get unique retrieved document chunks from list of several retriever queries.
 
@@ -121,20 +123,20 @@ def unique_docs(docs: list[list]) -> list:
     return [loads(doc) for doc in unique_chunks]
 
 
-def simple_string_output(out_dict):
+def simple_string_output(out_dict: Dict[str, Union[str, Dict[str, str]]]) -> str:
     """Generate a formatted string representation of taxonomic classification details.
 
     Args:
         out_dict (dict): A dictionary containing the following keys:
-            - "guess_class" (str): The taxonomic classification guess.
-            - "ancestral" (str): Information about ancestral features.
-            - "specific" (str): Information about organismal features.
-            - "biodiversity" (str): Knowledge about biodiversity.
-            - "commentary" (str): Additional commentary.
+            - "guess_class": The taxonomic classification guess.
+            - "ancestral": Information about ancestral features.
+            - "specific": Information about organismal features.
+            - "biodiversity": Knowledge about biodiversity.
+            - "commentary": Additional commentary.
 
     Returns
     -------
-        str: A formatted string containing the taxonomic classification details.
+        str: A formatted string containing the model's structured outputs.
     """
     return f"""
 Taxonomic Classification:
@@ -150,7 +152,7 @@ Commentary:
         """
 
 
-def clean_string_output(out_dict):
+def clean_string_output(out_dict: Dict[str, Union[str, Dict[str, str]]]) -> str:
     """
     Format and return a string representation of the provided observation dictionary.
 
@@ -206,7 +208,7 @@ Biodiversity Knowledge:
     return output
 
 
-def b64_to_pil(image_b64):
+def b64_to_pil(image_b64: str) -> Image.Image:
     """
     Convert a base64-encoded image to a PIL Image object.
 
@@ -223,7 +225,7 @@ def b64_to_pil(image_b64):
         with an error message.
     """
     try:
-        im_file = BytesIO(image_b64)  # convert image to file-like object
+        im_file = BytesIO(image_b64.encode("utf-8"))  # Convert string to bytes
         image = Image.open(im_file)  # to PIL Image object
     except Exception as e:
         print(e)
@@ -232,7 +234,7 @@ def b64_to_pil(image_b64):
     return image
 
 
-def imgurl_tob64(image_url):
+def imgurl_tob64(image_url: str) -> str:
     """
     Convert an image from a given URL to a Base64-encoded string.
 
@@ -258,7 +260,7 @@ def imgurl_tob64(image_url):
     return image_b64
 
 
-def imgfile_tob64(image_path):
+def imgfile_tob64(image_path: str) -> str:
     """
     Convert an image file to a Base64-encoded string.
 
@@ -273,7 +275,7 @@ def imgfile_tob64(image_path):
         return base64.b64encode(image_file.read()).decode("utf-8")
 
 
-def pilimg_tob64(image_obj):
+def pilimg_tob64(image_obj: Image.Image) -> str:
     """
     Convert a PIL Image object to a Base64-encoded string.
 
@@ -293,7 +295,9 @@ def pilimg_tob64(image_obj):
     return base64.b64encode(image_bytes).decode("utf-8")
 
 
-def get_metrics(y_trues, y_preds, level, count, verbose=True):
+def get_metrics(
+    y_trues: List[str], y_preds: List[str], level: str, count: int, verbose: bool = True
+) -> Dict[str, float]:
     """
     Calculate and return accuracy + F1 score metrics for true and predicted labels.
 
@@ -343,7 +347,9 @@ def get_metrics(y_trues, y_preds, level, count, verbose=True):
     return {"accuracy": accuracy, "f1": f1}
 
 
-def dict_match(y_true_dict, y_pred_dict):
+def dict_match(
+    y_true_dict: Dict[str, str], y_pred_dict: Dict[str, str]
+) -> Tuple[int, int]:
     """
     Compare two dictionaries to determine the number of matching key-value pairs.
 
@@ -367,7 +373,11 @@ def dict_match(y_true_dict, y_pred_dict):
     return correct, total
 
 
-def classify_report(true_dicts, pred_dicts, verbose=True):
+def classify_report(
+    true_dicts: List[Dict[str, str]],
+    pred_dicts: List[Dict[str, str]],
+    verbose: bool = True,
+) -> Dict[str, Dict[str, Union[float, int]]]:
     """
     Generate classification metrics for taxonomic predictions at various ranks.
 
@@ -421,7 +431,9 @@ def classify_report(true_dicts, pred_dicts, verbose=True):
     return out_dict
 
 
-def custom_collate_fn(batch):
+def custom_collate_fn(
+    batch: List[Tuple[Any, Dict[str, Any]]],
+) -> Tuple[List[Any], List[Dict[str, Any]]]:
     """
     Process batches of data using a custom collate function.
 
@@ -444,7 +456,9 @@ def custom_collate_fn(batch):
     return list(images), list(class_dicts)
 
 
-async def rag_evaluate(eval_dict, embeddings):
+async def rag_evaluate(
+    eval_dict: Dict[str, Any], embeddings: Any
+) -> Optional[pd.DataFrame]:
     """
     Evaluate the quality of a response in a Retrieval-Augmented Generation (RAG) system.
 
@@ -512,7 +526,9 @@ async def rag_evaluate(eval_dict, embeddings):
     return pd.DataFrame.from_dict(scores)
 
 
-def write_overall_metrics(csv_filename, data):
+def write_overall_metrics(
+    csv_filename: str, data: Dict[str, Union[Dict[str, float], float]]
+) -> None:
     """
     Write overall metrics to a CSV file.
 
@@ -547,7 +563,9 @@ def write_overall_metrics(csv_filename, data):
                 writer.writerow([rank, metrics, ""])
 
 
-def extract_tax_metrics(result_obj, verbose=True):
+def extract_tax_metrics(
+    result_obj: List[Dict[str, Any]], verbose: bool = True
+) -> Tuple[Dict[str, Dict[str, Union[float, int]]], List[Dict[str, str]]]:
     """
     Extract classification metrics from a result object.
 
@@ -574,7 +592,9 @@ def extract_tax_metrics(result_obj, verbose=True):
     return class_report, guess_classes
 
 
-def extract_tax_metrics_rs(result_obj, verbose=True):
+def extract_tax_metrics_rs(
+    result_obj: List[Dict[str, Any]], verbose: bool = True
+) -> Tuple[Dict[str, Dict[str, Union[float, int]]], List[Dict[str, str]]]:
     """
     Extract taxonomic metrics and enrich guess class dictionaries with RSID information.
 
@@ -600,10 +620,7 @@ def extract_tax_metrics_rs(result_obj, verbose=True):
     return class_report, guess_classes
 
 
-def write_preds_to_csv(
-    guess_classes,
-    csv_filename,
-):
+def write_preds_to_csv(guess_classes: List[Dict[str, str]], csv_filename: str) -> None:
     """
     Write prediction data to a CSV file.
 

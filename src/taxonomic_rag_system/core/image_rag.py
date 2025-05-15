@@ -42,7 +42,7 @@ import asyncio
 import gc
 import os
 from pathlib import Path
-from typing import Union
+from typing import Any, Optional, Union
 
 import torch
 from openai import AsyncOpenAI
@@ -104,15 +104,15 @@ class ImageRAGModel:
 
     def __init__(
         self,
-        vstore_path,
-        collection_name="Wiki_contexted",
-        embedding_model="dunzhang/stella_en_1.5B_v5",
-        search_type="similarity",
-        k=30,
-        rerank=False,
-        multiquery=False,
-        cap=None,
-        model="gpt-4o",
+        vstore_path: str,
+        collection_name: str = "Wiki_contexted",
+        embedding_model: str = "dunzhang/stella_en_1.5B_v5",
+        search_type: str = "similarity",
+        k: int = 30,
+        rerank: bool = False,
+        multiquery: bool = False,
+        cap: Optional[AsyncOpenAI] = None,
+        model: str = "gpt-4o",
     ):
         if cap is None:
             cap = AsyncOpenAI()
@@ -128,7 +128,7 @@ class ImageRAGModel:
             multiquery=multiquery,
         )
 
-    def get_device(self):
+    def get_device(self) -> torch.device:
         """
         Retrieve the device on which the model is currently loaded.
 
@@ -139,8 +139,13 @@ class ImageRAGModel:
         return self.rag_model.device
 
     async def query_image(
-        self, image_url=None, image_obj=None, image_path=None, context=False, verbose=1
-    ):
+        self,
+        image_url: Optional[str] = None,
+        image_obj: Optional[Any] = None,
+        image_path: Optional[str] = None,
+        context: bool = False,
+        verbose: int = 1,
+    ) -> dict[str, Any]:
         """
         Asynchronously generates a caption, retrieves, and optionally adds context.
 
@@ -161,7 +166,7 @@ class ImageRAGModel:
             dict: A dictionary containing the following keys:
                 - "caption" (str): Generated caption for the image.
                 - "results" (object): Results from the RAG model invocation.
-                - "context" (list, optional): List of page content from retrieved docs,
+                - "context" (str, optional): String of page content from retrieved docs,
                   if context is True.
 
         Raises
@@ -180,9 +185,11 @@ class ImageRAGModel:
             output["results"] = await self.rag_model.ainvoke(output["caption"])
             if context:
                 docs = await self.rag_model.aretrieve(output["caption"])
-                output["context"] = [d.page_content for d in docs]
+                output["context"] = "\n\n".join(
+                    [f"{d.metadata}\n{d.page_content}" for d in docs]
+                )  # Convert to string
         except Exception as er:
-            print(f"{er} occured")
+            print(f"{er} occurred")
             output = {
                 "caption": "",
                 "results": TaxBiodiversity(
@@ -205,7 +212,12 @@ class ImageRAGModel:
             print("queried...")
         return output
 
-    async def caption_image(self, image_url=None, image_obj=None, image_path=None):
+    async def caption_image(
+        self,
+        image_url: Optional[str] = None,
+        image_obj: Optional[Any] = None,
+        image_path: Optional[str] = None,
+    ) -> str:
         """
         Generate a caption for an image provided via URL, object, or file path.
 
@@ -230,7 +242,7 @@ class ImageRAGModel:
         )
         return await self.captioner.generate_caption(image_b64)
 
-    async def rarespecies_dataset_run(self, verbose=1):
+    async def rarespecies_dataset_run(self, verbose: int = 1) -> list[dict[str, Any]]:
         """
         Asynchronously processes a dataset of rare species images using a RAG system.
 
@@ -352,11 +364,13 @@ class NaiveVLModel:
 
     """"""
 
-    def __init__(self, model="google/gemini-2.0-flash-001"):
+    def __init__(self, model: str = "google/gemini-2.0-flash-001"):
         self.image_processor = ImageProcessor()
         self.model = TaxClassifierVLM(model=model)
 
-    async def query(self, image_path=None, image_obj=None):
+    async def query(
+        self, image_path: Optional[str] = None, image_obj: Optional[Any] = None
+    ) -> dict[str, str]:
         """
         Query the VLM to generate a classification guess for an image.
 
@@ -381,7 +395,7 @@ class NaiveVLModel:
                 level: guess_class[level] for level in guess_class if level != "Domain"
             }
         except Exception as er:
-            print(f"{er} occured")
+            print(f"{er} occurred")
             guess_class = {
                 "Kingdom": "Animalia",
                 "Phylum": "N/A",
@@ -395,7 +409,7 @@ class NaiveVLModel:
         return guess_class
 
     async def rarespecies_dataset_run(
-        self, verbose=1
+        self, verbose: int = 1
     ) -> list[dict[str, Union[str, dict[str, str]]]]:
         """
         Pass over the rare-species dataset.
