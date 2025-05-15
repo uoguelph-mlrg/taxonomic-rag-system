@@ -621,7 +621,7 @@
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>python<span class="w"> </span>src/taxonomic_rag_system/preprocess/chunk_vectorize.py<span class="w"> </span>--source<span class="w"> </span>&lt;source_directory&gt;<span class="w"> </span>--pers_dir<span class="w"> </span>&lt;persistence_directory&gt;<span class="w"> </span>--contextualize<span class="w"> </span>--write
 </span></code></pre></div>
 - <code>--source</code>: Path to the directory containing document sources.
-- <code>--pers_dir</code>: Path to the persistant directory for the vector store.
+- <code>--pers_dir</code>: Path to the persistent directory for the vector store.
 - <code>--contextualize</code>: Flag to enable contextualization of documents (using OpenAI's gpt-4o-mini).
 - <code>--write</code>: Flag to save the processed data.</p>
 <h3 id="rare-species-dataset-experiments">Rare Species Dataset Experiments<a class="headerlink" href="#rare-species-dataset-experiments" title="Permanent link">&para;</a></h3>
@@ -630,7 +630,7 @@
    <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>python<span class="w"> </span>src/taxonomic_rag_system/runs/rare_species_simp_rag.py<span class="w"> </span>--output<span class="w"> </span>&lt;output_directory&gt;<span class="w"> </span>--vstore<span class="w"> </span>&lt;persistence_directory&gt;<span class="w"> </span>--write
 </span></code></pre></div></li>
 <li><code>--output</code>: Path to save the results.</li>
-<li><code>--vstore</code>: Path to the persistant directory for the vector store.</li>
+<li><code>--vstore</code>: Path to the persistent directory for the vector store.</li>
 <li>
 <p><code>--write</code>: Flag to save the results.</p>
 </li>
