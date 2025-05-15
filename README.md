@@ -84,7 +84,7 @@ To run experiments on the rare species dataset, use the following scripts:
 
 1. **Simple RAG Model**:
    ```bash
-   python src/taxonomic_rag_system/runs/rare_species_simp_rag.py
+   python src/taxonomic_rag_system/runs/rare_species_simp_rag.py --output <output_directory> --vstore <persistence_directory> --write
    ```
    
 2. **Advanced RAG Model**:
@@ -99,7 +99,7 @@ To run experiments on the rare species dataset, use the following scripts:
 
 4. **Naive Vision-Language Model - Gemini 2.0 Flash**:
    ```bash
-   python src/taxonomic_rag_system/runs/rare_species_naive_gemini.py
+   python src/taxonomic_rag_system/runs/rare_species_naive_gemini.py --output <output_directory> --write
    ```
 
 ##

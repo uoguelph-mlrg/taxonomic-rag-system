@@ -1,54 +1,53 @@
-# Vector AI Engineering template (uv edition) repository
+# Taxonomic RAG System Documentation
 
-This template repository can be used to bootstrap AI Engineering project repositories
-on Github! The template is meant for python codebases since Python is the most commonly
-used language by our team.
+Welcome to the documentation for the Taxonomic RAG System, a framework for taxonomic classification and biodiversity analysis. This system integrates image processing, Retrieval-Augmented Generation (RAG), and Vision-Language Models (VLMs) to classify rare species and provide contextualized insights.
 
-The template includes:
+---
 
-- [pyproject.toml](https://pip.pypa.io/en/stable/reference/build-system/pyproject-toml/)
-file to specify repository information and manage dependencies using
-[uv](https://docs.astral.sh/uv/).
+## Table of Contents
 
-- [README.md](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes) which should have basic information on why the project is
-useful, installation instructions and other information on how users can get started.
+- [Overview](#overview)
+- [Getting Started](#getting-started)
+- [Modules](#modules)
+  - [Core](#core)
+  - [Preprocess](#preprocess)
+  - [Runs](#runs)
+  - [Utils](#utils)
+- [API Reference](api.md)
+- [User Guide](user_guide.md)
 
-- [.pre-commit-config.yaml](https://pre-commit.com/) for running pre-commit hooks that
-check for code-style, apply formatting, check for type hints and run tests.
+---
 
-- [.github/pull_request_template.md](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/creating-a-pull-request-template-for-your-repository) for PRs.
+## Overview
 
-- [.github/ISSUE_TEMPLATE](https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository) for bug reports and issues that can be raised on the repository.
+The Taxonomic RAG System combines RAG with Wikipedia and Wikispecies data to:
+1. Classify rare species with taxonomic reasoning.
+2. Generate commentary on biodiversity and classification confidence.
 
-- [.github/workflows](https://docs.github.com/en/actions/using-workflows) for running CI
-workflows using Github actions. The template includes CI workflows for code checks,
-documentation building and releasing python packages to PyPI.
+It leverages VLMs to generate feature-based descriptions, which are semantically matched to vectorstore documents for enhanced classification accuracy.
 
-- [LICENSE.md](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository) for adding a license to the project repository.
-By default, this is the [Apache-2.0 license](http://www.apache.org/licenses/). Please
-change according to your project!
+---
 
-- [docs](https://squidfunk.github.io/mkdocs-material/) for adding project documentation. Typically
-projects should have API reference documentation, user guides and tutorials.
+## Getting Started
 
-- [CONTRIBUTING.md](https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions/setting-guidelines-for-repository-contributors) with basic guidelines on how others can
-contribute to the repository.
+Follow the [User Guide](user_guide.md) for installation and usage instructions. Ensure all dependencies are installed and configured.
 
-- [CODE_OF_CONDUCT.md](https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions/adding-a-code-of-conduct-to-your-project) with standards on how the community engages in
-a healthy and constructive manner.
+---
 
-- [.gitignore](https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files)
-with some standard file extensions to be ignored by git. Please add/modify as necessary.
+## Modules
 
-- [codecov.yml](https://docs.codecov.com/docs/codecov-yaml) for using codecov.io to
-generate code coverage information for your repository. You would need to add codecov.io
-app as an [integration to your repository](https://docs.codecov.com/docs/how-to-create-a-github-app-for-codecov-enterprise).
+### **Core**
+Implements the main logic for taxonomic classification, including image processing, caption generation, and RAG-based retrieval.
 
+### **Preprocess**
+Provides utilities for preparing datasets, including chunking, contextualizing, and building vectorstores.
 
-If you are starting a new project, you can navigate to the [Use this template](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template) button
-on the top right corner of the [template repository home page](https://github.com/VectorInstitute/aieng-template)
-which will allow you to bootstrap your project repo using this template.
+### **Runs**
+Contains scripts for running experiments, such as rare species classification using RAG and VLM models.
 
-Please check out the user guide page for more detailed information on using the
-template features. For existing projects, the [user guide](user_guide.md)
-can be followed to migrate to following the template more closely.
+### **Utils**
+Offers helper functions for document retrieval, evaluation metrics, image processing, and taxonomic modeling.
+
+---
+
+For detailed information, refer to the [API Reference](api.md) and [User Guide](user_guide.md).
