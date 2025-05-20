@@ -297,7 +297,7 @@ def pilimg_tob64(image_obj: Image.Image) -> str:
 
 def get_metrics(
     y_trues: List[str], y_preds: List[str], level: str, count: int, verbose: bool = True
-) -> Dict[str, Union(float, int)]:
+) -> Dict[str, Union[float, int]]:
     """
     Calculate and return accuracy + F1 score metrics for true and predicted labels.
 
