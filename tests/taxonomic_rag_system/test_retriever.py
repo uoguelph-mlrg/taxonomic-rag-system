@@ -1,8 +1,29 @@
 """Module of tests for retriever classes in `taxonomic_rag_system` project."""
 
+from unittest.mock import mock_open, patch
+
 import pytest
 
 from taxonomic_rag_system.utils.retriever import WikiStellaRAGModel
+
+
+@pytest.fixture(autouse=True)
+def mock_api_key_files():
+    """
+    Mock the behavior of opening a file to read an API key.
+
+    This function uses `unittest.mock.patch` to replace the built-in `open` function
+    with a mock that returns a predefined string ("mock_api_key") when read. It is
+    useful for testing code that relies on reading API keys from files without
+    requiring actual files to be present.
+
+    Yields
+    ------
+        None: This is a generator function that provides a mocked context for the
+        duration of its usage.
+    """
+    with patch("builtins.open", mock_open(read_data="mock_api_key")):
+        yield
 
 
 def test_wiki_stella_rag_model_initialization():
