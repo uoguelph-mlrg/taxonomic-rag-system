@@ -46,11 +46,14 @@ from taxonomic_rag_system.utils.out_models import Caption, Tax
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
-# Set api key env variables using `.openai.key` and `.openrouter.key` files in home dir
-with open(Path.home() / ".openai.key", "r") as f:
-    os.environ["OPENAI_API_KEY"] = f.read().strip()
-with open(Path.home() / ".openrouter.key", "r") as f:
-    os.environ["OPENROUTER_API_KEY"] = f.read().strip()
+
+def load_api_keys():
+    """Load API keys from files."""
+    # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
+    with open(Path.home() / ".openai.key", "r") as f:
+        os.environ["OPENAI_API_KEY"] = f.read().strip()
+    with open(Path.home() / ".openrouter.key", "r") as f:
+        os.environ["OPENROUTER_API_KEY"] = f.read().strip()
 
 
 class VLM:
@@ -86,6 +89,7 @@ class InstructorVLModel(VLM):
 
     def __init__(self, cap: Any, model: str, temp: float) -> None:
         super().__init__(cap, model, temp)
+        load_api_keys()
         self.client = instructor.from_openai(self.cap)
 
 
@@ -113,6 +117,7 @@ class TaxClassifierVLM(VLM):
     def __init__(
         self, cap: Any, model: str, temp: float, additional_param: Optional[str] = None
     ) -> None:
+        load_api_keys()
         if cap is None:
             cap = AsyncOpenAI(
                 base_url="https://openrouter.ai/api/v1",
@@ -239,7 +244,7 @@ class DescriptiveCaptioner(InstructorVLModel):
 
     Attributes
     ----------
-        cleint: The AI client instance.
+        client: The AI client instance.
         model: The model name, default is 'gpt-4o'.
         temp: The temperature setting, default is 0.
     """

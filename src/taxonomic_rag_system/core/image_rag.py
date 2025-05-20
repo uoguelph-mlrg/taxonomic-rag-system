@@ -61,11 +61,13 @@ from taxonomic_rag_system.utils.vision_models import (
 )
 
 
-# Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
-with open(Path.home() / ".openai.key", "r") as f:
-    os.environ["OPENAI_API_KEY"] = f.read().strip()
-with open(Path.home() / ".openrouter.key", "r") as f:
-    os.environ["OPENROUTER_API_KEY"] = f.read().strip()
+def load_api_keys():
+    """Load API keys from files."""
+    # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
+    with open(Path.home() / ".openai.key", "r") as f:
+        os.environ["OPENAI_API_KEY"] = f.read().strip()
+    with open(Path.home() / ".openrouter.key", "r") as f:
+        os.environ["OPENROUTER_API_KEY"] = f.read().strip()
 
 
 class ImageRAGModel:
@@ -116,6 +118,7 @@ class ImageRAGModel:
     ):
         if cap is None:
             cap = AsyncOpenAI()
+        load_api_keys()
         self.image_processor = ImageProcessor()
         self.captioner = DescriptiveCaptioner(cap=cap, model=model)
         self.rag_model = WikiStellaRAGModel(
@@ -365,6 +368,7 @@ class NaiveVLModel:
     """"""
 
     def __init__(self, model: str = "google/gemini-2.0-flash-001"):
+        load_api_keys()
         self.image_processor = ImageProcessor()
         self.model = TaxClassifierVLM(model=model)
 

@@ -1,40 +1,43 @@
 """
-Module provides functionality for running a Naive Vision-Language Model (VLM).
+Module providing main entry point for a Simple RAG Model for taxonomic classification.
 
-It builds the `ImageRAGModel` class using a pre-trained VLM model from OpenAI.
-on a rare species dataset and extracting taxonomic metrics and predictions.
+It builds the `ImageRAGModel` class using a pre-trained VLM model from OpenAI and
+a vector database build from Wiki documents.
+
+This script runs the model on imageomic's rare species dataset and
+extracts taxonomic predictions as well as evaluation of performance.
 
 The script performs the following steps:
-1. Reads API keys from `.openai.key` and `.openrouter.key` files in the user's home dir.
-2. Parses command-line arguments for output paths and a flag whether to write results.
-3. Builds an ImageRAGModel and runs it on a rare species dataset.
-5. Optionally writes the results (metrics and predictions) to timestamped CSV files.
+1. Parses command-line arguments for output paths and a flag whether to write results.
+2. Builds an ImageRAGModel and runs it on a rare species dataset.
+3. Optionally writes the results (metrics and predictions) to timestamped CSV files.
 
 Modules:
+--------
     argparse: For parsing command-line arguments.
     asyncio: For asynchronous execution of the main function.
     datetime: For generating timestamps for output files.
-    os: For setting environment variables.
-    pathlib.Path: For handling file paths.
     taxonomic_rag_system.core.image_rag.ImageRAGModel:
-            For building and running VLM model.
+            For building and running model.
     taxonomic_rag_system.utils.helpers:
             For extracting metrics and writing results to CSV.
 
 Functions:
-    _parse_arguments: Parses command-line arguments for output path and write flag.
-    main: Asynchronous function that executes the rare species prediction workflow.
+--------
+    _parse_arguments: Parses command-line args for write, output, and vectorstore paths.
+    main: Executes the Simple RAG run, extracts metrics, and optionally writes results.
 
 Usage:
+--------
     Run the script from the command line with arguments:
-        python rare_species_simp_rag.py --output <path1> --vstore <path2> --write
+        ```python
+        rare_species_simp_rag.py - -output < path1 > --vstore < path2 > --write
+        ```
 """
 
 import argparse
 import asyncio
 import datetime
-import os
-from pathlib import Path
 
 from taxonomic_rag_system.core.image_rag import ImageRAGModel
 
@@ -82,12 +85,10 @@ async def main() -> None:
     Execute the Naive VLM run for rare species predictions with output metrics.
 
     This function performs the following steps:
-    1. Sets API key env variables using `.openai.key` and `.openrouter.key` files
-       located in the user's home directory.
-    2. Parses command-line arguments to output paths and whether to write results.
-    3. Builds a naive VLM model and runs it on a rare species dataset.
-    4. Extracts taxonomic metrics and predictions from the model's output.
-    5. Optionally writes results (metrics and predictions) to CSV files with timestamps.
+    1. Parses command-line arguments to output paths and whether to write results.
+    2. Builds a simple taxonomic RAG System and runs it on a rare species dataset.
+    3. Extracts taxonomic metrics and predictions from the model's output.
+    4. Optionally writes results (metrics and predictions) to CSV files with timestamps.
 
     Args:
         None
@@ -96,12 +97,6 @@ async def main() -> None:
     -------
         None
     """
-    # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
-    with open(Path.home() / ".openai.key", "r") as f:
-        os.environ["OPENAI_API_KEY"] = f.read().strip()
-    with open(Path.home() / ".openrouter.key", "r") as f:
-        os.environ["OPENROUTER_API_KEY"] = f.read().strip()
-
     args = _parse_arguments()
     vstore_path = args.vstore
     write = args.write

@@ -78,7 +78,7 @@ async def contextual_retrieval_load(
     output_path: str,
     source: str = "",
     write: bool = True,
-) -> Tuple[list[Chunk], list[Chunk]]:
+) -> Tuple[list[Document], list[Document]]:
     """
     Chunk, contextualize and categorize document lists.
 
@@ -139,7 +139,7 @@ async def no_contextual_retrieval_load(
     docs: list[Document],
     output_path: str,
     write: bool = True,
-) -> list[Chunk]:
+) -> list[Document]:
     """
     Chunk, contextualize and categorize document lists.
 
@@ -185,7 +185,7 @@ async def no_contextual_retrieval_load(
     return useful_chunks
 
 
-def pretty_print_chunks(use: list[Chunk], notuse: list[Chunk]) -> None:
+def pretty_print_chunks(use: list[Document], notuse: list[Document]) -> None:
     """Log examples of useful and non-useful chunks from contextual embeddings."""
     for chunk in use[0:10]:
         logger.info("=" * 100)

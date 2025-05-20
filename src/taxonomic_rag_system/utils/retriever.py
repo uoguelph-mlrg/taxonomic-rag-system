@@ -43,13 +43,15 @@ from taxonomic_rag_system.utils.helpers import format_docs, unique_docs
 from taxonomic_rag_system.utils.out_models import MultiQuery, TaxBiodiversity
 
 
-# Set API key env variables w/ api key files in home dir
-with open(Path.home() / ".openai.key", "r") as f:
-    os.environ["OPENAI_API_KEY"] = f.read().strip()
-with open(Path.home() / ".openrouter.key", "r") as f:
-    os.environ["OPENROUTER_API_KEY"] = f.read().strip()
-with open(Path.home() / ".cohere.key", "r") as f:
-    os.environ["COHERE_API_KEY"] = f.read().strip()
+def load_api_keys():
+    """Load API keys from files."""
+    # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
+    with open(Path.home() / ".openai.key", "r") as f:
+        os.environ["OPENAI_API_KEY"] = f.read().strip()
+    with open(Path.home() / ".openrouter.key", "r") as f:
+        os.environ["OPENROUTER_API_KEY"] = f.read().strip()
+    with open(Path.home() / ".cohere.key", "r") as f:
+        os.environ["COHERE_API_KEY"] = f.read().strip()
 
 
 class RAGChainBuilder:
@@ -207,6 +209,7 @@ class WikiStellaRAGModel(BaseRetriever):
             search_type=search_type,
             k=k,
         )
+        load_api_keys()
         self.vectorstore = self._set_up_retriever(vstore_path)
         self.retriever: Any = self.vectorstore.as_retriever(
             search_type=self.search_type, search_kwargs={"k": self.k}

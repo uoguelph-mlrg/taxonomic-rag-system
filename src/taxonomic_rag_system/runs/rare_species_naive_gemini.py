@@ -1,31 +1,32 @@
 """
-Module providing a Naive Vision-Language Model (VLM) for taxonomic classification.
+Module providing main entry point for a Naive VLM for taxonomic classification.
 
-Builds the `NaiveVLModel` class using a pre-trained VLM model from OpenRouter.
+Builds the `NaiveVLModel` class using a pre-trained VLM model from Google's Deepmind
+using OpenRouter.
 
-It includes functionality for querying the model with images
-and evaluating its performance on a rare species dataset.
+This script runs the model on imageomic's rare species dataset and
+extracts taxonomic predictions as well as evaluation of performance.
 
 Classes:
 --------
-- NaiveVLModel: A class for performing taxonomic classification using a VLM.
+NaiveVLModel: A class for taxonomic classification using Gemini 2.0 Flash.
 
 Functions:
-- main(): Executes the Naive VLM run, extracts metrics, and optionally writes results.
+--------
+_parse_arguments: Parses command-line arguments for output path and write flag.
+main(): Executes the Naive VLM run, extracts metrics, and optionally writes results.
 
 Usage:
 ------
 Run this script to evaluate the Naive VLM on the rare species dataset and write results:
    ```python
-   rare_species_naive_gemini.py - -output_path < path > --write
+   rare_species_naive_gemini.py - -output_path < path1 > --write
    ```
 """
 
 import argparse
 import asyncio
 import datetime
-import os
-from pathlib import Path
 
 from taxonomic_rag_system.core.image_rag import NaiveVLModel
 from taxonomic_rag_system.utils.helpers import (
@@ -65,13 +66,11 @@ async def main():
     """
     Execute the Naive VLM run for rare species predictions with output metrics.
 
-    This function performs the following steps:
-    1. Sets API key env variables using `.openai.key` and `.openrouter.key` files
-       located in the user's home directory.
-    2. Parses command-line arguments to output paths and whether to write results.
-    3. Builds a naive VLM model and runs it on a rare species dataset.
-    4. Extracts taxonomic metrics and predictions from the model's output.
-    5. Optionally writes results (metrics and predictions) to CSV files with timestamps.
+    Performs the following steps:
+    1. Parses command-line arguments to output paths and whether to write results.
+    2. Builds a naive VLM model and runs it on a rare species dataset.
+    3. Extracts taxonomic metrics and predictions from the model's output.
+    4. Optionally writes results (metrics and predictions) to CSV files with timestamps.
 
     Args:
         None
@@ -80,12 +79,6 @@ async def main():
     -------
         None
     """
-    # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
-    with open(Path.home() / ".openai.key", "r") as f:
-        os.environ["OPENAI_API_KEY"] = f.read().strip()
-    with open(Path.home() / ".openrouter.key", "r") as f:
-        os.environ["OPENROUTER_API_KEY"] = f.read().strip()
-
     args = _parse_arguments()
     output_path = args.output_path
     write = args.write

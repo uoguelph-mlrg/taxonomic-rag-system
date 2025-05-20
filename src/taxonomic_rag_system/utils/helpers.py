@@ -174,7 +174,7 @@ def clean_string_output(out_dict: Dict[str, Union[str, Dict[str, str]]]) -> str:
         ancestral and organismal features (if available), commentary, and biodiversity
         knowledge.
     """
-    cls = out_dict["guess_class"]
+    cls = dict(out_dict["guess_class"])
     cls_out = "\n".join(
         [f"{level}: {cls[level]}" for level in cls if cls[level] != "N/A"]
     )
@@ -297,7 +297,7 @@ def pilimg_tob64(image_obj: Image.Image) -> str:
 
 def get_metrics(
     y_trues: List[str], y_preds: List[str], level: str, count: int, verbose: bool = True
-) -> Dict[str, float]:
+) -> Dict[str, Union(float, int)]:
     """
     Calculate and return accuracy + F1 score metrics for true and predicted labels.
 
