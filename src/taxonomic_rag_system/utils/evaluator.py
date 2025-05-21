@@ -186,13 +186,13 @@ def process_row(row: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "image": None,
             "class_dict": {
-                "RSID": None,
-                "Kingdom": None,
-                "Phylum": None,
-                "Class": None,
-                "Order": None,
-                "Family": None,
-                "Genus": None,
-                "Species": None,
+                "RSID": "",
+                "Kingdom": "",
+                "Phylum": "",
+                "Class": "",
+                "Order": "",
+                "Family": "",
+                "Genus": "",
+                "Species": "",
             },
         }

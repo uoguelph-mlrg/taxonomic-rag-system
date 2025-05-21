@@ -42,7 +42,7 @@ import asyncio
 import gc
 import os
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Optional, TypedDict, Union
 
 import torch
 from openai import AsyncOpenAI
@@ -61,7 +61,13 @@ from taxonomic_rag_system.utils.vision_models import (
 )
 
 
-def load_api_keys():
+class _QueryImageOutput(TypedDict):
+    caption: str
+    results: TaxBiodiversity
+    context: str
+
+
+def load_api_keys() -> None:
     """Load API keys from files."""
     # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
     with open(Path.home() / ".openai.key", "r") as f:
@@ -148,7 +154,7 @@ class ImageRAGModel:
         image_path: Optional[str] = None,
         context: bool = False,
         verbose: int = 1,
-    ) -> dict[str, Any]:
+    ) -> _QueryImageOutput:
         """
         Asynchronously generates a caption, retrieves, and optionally adds context.
 
@@ -166,51 +172,52 @@ class ImageRAGModel:
 
         Returns
         -------
-            dict: A dictionary containing the following keys:
+            TypedDict containing the following keys:
                 - "caption" (str): Generated caption for the image.
                 - "results" (object): Results from the RAG model invocation.
-                - "context" (str, optional): String of page content from retrieved docs,
-                  if context is True.
+                - "context" (str): String of page content from retrieved docs,
+                  if context is True, else empty string.
 
         Raises
         ------
             Exception: Captures and logs any exceptions that occur during processing,
                        providing a default output structure.
         """
-        output = {}
         try:
             image_b64 = self.image_processor.process_image(
                 image_url=image_url, image_obj=image_obj, image_path=image_path
             )
-            output["caption"] = await self.captioner.generate_caption(image_b64)
+            caption = await self.captioner.generate_caption(image_b64)
             if verbose > 0:
                 print("querying...")
-            output["results"] = await self.rag_model.ainvoke(output["caption"])
+            results = await self.rag_model.ainvoke(caption=caption)
             if context:
-                docs = await self.rag_model.aretrieve(output["caption"])
-                output["context"] = "\n\n".join(
+                docs = await self.rag_model.aretrieve(caption=caption)
+                cntxt = "\n\n".join(
                     [f"{d.metadata}\n{d.page_content}" for d in docs]
                 )  # Convert to string
         except Exception as er:
             print(f"{er} occurred")
-            output = {
-                "caption": "",
-                "results": TaxBiodiversity(
-                    classification={
-                        "Kingdom": "Animalia",
-                        "Phylum": "N/A",
-                        "Class": "N/A",
-                        "Order": "N/A",
-                        "Family": "N/A",
-                        "Genus": "N/A",
-                        "Species": "N/A",
-                    },
-                    ancestral="",
-                    specific="",
-                    commentary="",
-                    bio_knowledge="",
-                ),
-            }
+            caption = ""
+            results = TaxBiodiversity(
+                classification={
+                    "Kingdom": "Animalia",
+                    "Phylum": "N/A",
+                    "Class": "N/A",
+                    "Order": "N/A",
+                    "Family": "N/A",
+                    "Genus": "N/A",
+                    "Species": "N/A",
+                },
+                ancestral="",
+                specific="",
+                commentary="",
+                bio_knowledge="",
+            )
+        if not context:
+            cntxt = ""
+        output = _QueryImageOutput(caption=caption, results=results, context=cntxt)
+
         if verbose > 0:
             print("queried...")
         return output
@@ -288,14 +295,15 @@ class ImageRAGModel:
             rag_responses = await asyncio.gather(*tasks)
             torch.cuda.empty_cache()
             for i, response in enumerate(rag_responses):
-                output = {
+                true_class = {
+                    level: true_classes[i][level]
+                    for level in true_classes[i]
+                    if level != "RSID"
+                }
+                output: dict[str, Union[str, dict[str, str]]] = {
                     "caption": response["caption"],
-                    "true_class": {
-                        level: true_classes[i][level]
-                        for level in true_classes[i]
-                        if level != "RSID"
-                    },
-                    "context": response.get("context", None),
+                    "true_class": true_class,
+                    "context": response.get("context", ""),
                     "ancestral": response["results"].ancestral,
                     "specific": response["results"].specific,
                     "commentary": response["results"].commentary,
@@ -323,7 +331,7 @@ class ImageRAGModel:
                     print(f"{'Rank':<10}{'True':<30}{'Pred':<30}")
                     print("=" * 50)
                     for level in taxonomy_levels:
-                        true_value = output["true_class"].get(level, "")
+                        true_value = true_class.get(level, "")
                         pred_value = guess_class.get(level, "")
                         print(f"{level:<10}{true_value:<30}{pred_value:<30}")
                     print("=" * 50)
@@ -414,7 +422,7 @@ class NaiveVLModel:
 
     async def rarespecies_dataset_run(
         self, verbose: int = 1
-    ) -> list[dict[str, Union[str, dict[str, str]]]]:
+    ) -> list[dict[str, Union[str, dict[str, Union[str, Any]]]]]:
         """
         Pass over the rare-species dataset.
 
@@ -442,12 +450,10 @@ class NaiveVLModel:
             rag_responses = await asyncio.gather(*tasks)
             torch.cuda.empty_cache()
             for i, response in enumerate(rag_responses):
-                output = {
-                    "true_class": {
-                        level: true_classes[i][level]
-                        for level in true_classes[i]
-                        if level != "RSID"
-                    }
+                true_class = {
+                    level: true_classes[i][level]
+                    for level in true_classes[i]
+                    if level != "RSID"
                 }
                 # Output parse
                 cls = response
@@ -466,12 +472,15 @@ class NaiveVLModel:
                     print(f"{'Rank':<10}{'True':<30}{'Pred':<30}")
                     print("=" * 50)
                     for level in taxonomy_levels:
-                        true_value = output["true_class"].get(level, "")
+                        true_value = true_class.get(level, "")
                         pred_value = guess_class.get(level, "")
                         print(f"{level:<10}{true_value:<30}{pred_value:<30}")
                     print("=" * 50)
-                output["guess_class"] = guess_class
-                output["RSID"] = true_classes[i]["RSID"]
+                output: dict[str, Union[str, dict[str, str]]] = {
+                    "true_class": true_class,
+                    "guess_class": guess_class,
+                    "RSID": true_classes[i]["RSID"],
+                }
                 batch.append(output)
             outputs.extend(batch)
         gc.collect()

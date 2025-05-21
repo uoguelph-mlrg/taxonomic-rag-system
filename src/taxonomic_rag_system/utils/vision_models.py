@@ -34,7 +34,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import instructor
 from openai import AsyncOpenAI
@@ -47,7 +47,7 @@ from taxonomic_rag_system.utils.out_models import Caption, Tax
 logging.basicConfig(level=logging.INFO)
 
 
-def load_api_keys():
+def load_api_keys() -> None:
     """Load API keys from files."""
     # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
     with open(Path.home() / ".openai.key", "r") as f:
@@ -114,9 +114,7 @@ class TaxClassifierVLM(VLM):
         generate_caption(image_b64): Generates a taxonomic classification for the image.
     """
 
-    def __init__(
-        self, cap: Any, model: str, temp: float, additional_param: Optional[str] = None
-    ) -> None:
+    def __init__(self, cap: Any = None, model: str = "", temp: float = 0) -> None:
         load_api_keys()
         if cap is None:
             cap = AsyncOpenAI(
@@ -250,7 +248,10 @@ class DescriptiveCaptioner(InstructorVLModel):
     """
 
     def __init__(
-        self, cap: Any, model: str, temp: float, additional_param: Optional[str] = None
+        self,
+        cap: Any,
+        model: str,
+        temp: float = 0,
     ) -> None:
         if cap is None:
             cap = AsyncOpenAI()

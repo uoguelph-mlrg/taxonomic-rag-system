@@ -116,10 +116,12 @@ async def contextual_retrieval_load(
 
     useful_chunks, notuseful_chunks = [], []
     chunk_total = 0
-    for doc in dox:
-        filename = doc["metadata"]["source"].split("/")[-1].replace(".txt", "")
-        for i, chunk in enumerate(doc["chunks"]):
-            response = await contextualize(chunk.page_content, doc.page_content, client)
+    for dock in dox:
+        filename = dock["metadata"]["source"].split("/")[-1].replace(".txt", "")
+        for i, chunk in enumerate(dock["chunks"]):
+            response = await contextualize(
+                chunk.page_content, dock["page_content"], client
+            )
             chunk_total += 1
             chunk.page_content = f"{chunk.page_content}\n\n{response.contextual_text}"
             if response.useful:
@@ -171,9 +173,9 @@ async def no_contextual_retrieval_load(
 
     useful_chunks = []
     chunk_total = 0
-    for doc in dox:
-        filename = doc["metadata"]["source"].split("/")[-1].replace(".txt", "")
-        for i, chunk in enumerate(doc["chunks"]):
+    for dock in dox:
+        filename = dock["metadata"]["source"].split("/")[-1].replace(".txt", "")
+        for i, chunk in enumerate(dock["chunks"]):
             chunk_total += 1
             useful_chunks.append(chunk)
             outname = f"{output_path}doc_{filename}_chunk_{i}.txt"

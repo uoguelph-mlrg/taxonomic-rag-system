@@ -174,7 +174,18 @@ def clean_string_output(out_dict: Dict[str, Union[str, Dict[str, str]]]) -> str:
         ancestral and organismal features (if available), commentary, and biodiversity
         knowledge.
     """
-    cls = dict(out_dict["guess_class"])
+    if isinstance(out_dict["guess_class"], dict):
+        cls = out_dict["guess_class"]
+    else:
+        cls = {
+            "Kingdom": "N/A",
+            "Phylum": "N/A",
+            "Class": "N/A",
+            "Order": "N/A",
+            "Family": "N/A",
+            "Genus": "N/A",
+            "Species": "N/A",
+        }
     cls_out = "\n".join(
         [f"{level}: {cls[level]}" for level in cls if cls[level] != "N/A"]
     )
@@ -377,7 +388,7 @@ def classify_report(
     true_dicts: List[Dict[str, str]],
     pred_dicts: List[Dict[str, str]],
     verbose: bool = True,
-) -> Dict[str, Dict[str, Union[float, int]]]:
+) -> Dict[str, Dict[str, float]]:
     """
     Generate classification metrics for taxonomic predictions at various ranks.
 
@@ -394,7 +405,7 @@ def classify_report(
 
     Returns
     -------
-        dict[str, dict[str,float|int]]: Rank-wise classification metrics.
+        dict[str, dict[str,float]]: Rank-wise classification metrics.
               Each taxonomic rank is sub-dictionary with:
               - "Count": The number of predictions made for that rank.
               - Additional keys for metrics such as precision, recall, and F1-score.
@@ -405,16 +416,8 @@ def classify_report(
         - The `dict_match` and `get_metrics` helper functions used to calculate
           the num correct predictions and the classification metrics, respectively.
     """
-    lengths, corrects = [], []
     ranks = ["Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"]
     out_dict = {}
-    # Get number of ranks predicted and number correctly predicted for each
-    for true_dict, pred_dict in zip(true_dicts, pred_dicts):
-        # Remove any inappropriate ranks in dict
-        pred = {rank: pred_dict[rank] for rank in ranks if rank in pred_dict}
-        correct, length = dict_match(true_dict, pred)
-        lengths.append(length)
-        corrects.append(correct)
     for rank in ranks:  # Go through each rank and build classification metrics dict
         true_names = [
             true_dict[rank]
@@ -422,12 +425,13 @@ def classify_report(
             if rank in pred_dict
         ]
         pred_names = [pred_dict[rank] for pred_dict in pred_dicts if rank in pred_dict]
-        out_dict[rank] = {"Count": len(pred_names)}
-        out_dict[rank].update(
-            get_metrics(
-                true_names, pred_names, rank, count=len(pred_names), verbose=verbose
-            )
+        out_dict[rank] = {"Count": float(len(pred_names))}
+        metrics = get_metrics(
+            true_names, pred_names, rank, count=len(pred_names), verbose=verbose
         )
+        # Convert integer values in metrics to floats
+        metrics = {k: float(v) if isinstance(v, int) else v for k, v in metrics.items()}
+        out_dict[rank].update(metrics)
     return out_dict
 
 
@@ -526,9 +530,7 @@ async def rag_evaluate(
     return pd.DataFrame.from_dict(scores)
 
 
-def write_overall_metrics(
-    csv_filename: str, data: Dict[str, Union[Dict[str, float], float]]
-) -> None:
+def write_overall_metrics(csv_filename: str, data: Dict[str, Dict[str, float]]) -> None:
     """
     Write overall metrics to a CSV file.
 

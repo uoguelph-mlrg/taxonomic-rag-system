@@ -30,12 +30,13 @@ from typing import Any
 import torch
 from langchain.output_parsers import PydanticOutputParser
 from langchain.retrievers import ContextualCompressionRetriever
-from langchain.retrievers.document_compressors import CohereRerank
+from langchain.retrievers.document_compressors.cohere_rerank import CohereRerank
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableSerializable
+from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_openai import ChatOpenAI
 
 # Local imports
@@ -43,7 +44,7 @@ from taxonomic_rag_system.utils.helpers import format_docs, unique_docs
 from taxonomic_rag_system.utils.out_models import MultiQuery, TaxBiodiversity
 
 
-def load_api_keys():
+def load_api_keys() -> None:
     """Load API keys from files."""
     # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
     with open(Path.home() / ".openai.key", "r") as f:
@@ -116,7 +117,9 @@ class RAGChainBuilder:
             },
         )
 
-    def _build_chain(self, retriever: Any) -> Any:
+    def _build_chain(
+        self, retriever: VectorStoreRetriever
+    ) -> RunnableSerializable[Any, TaxBiodiversity]:
         """
         Construct a RAG chain using the provided retriever and a prompt.
 
@@ -129,7 +132,7 @@ class RAGChainBuilder:
             | self.output_parser
         )
 
-    def invoke(self, inp: dict[str, Any]) -> Any:
+    def invoke(self, inp: dict[str, Any]) -> TaxBiodiversity:
         """
         Invoke the RAG chain synchronously with the given input.
 
@@ -138,7 +141,7 @@ class RAGChainBuilder:
         """
         return self.rag_chain.invoke(input=inp)
 
-    async def ainvoke(self, inp: dict[str, Any]) -> Any:
+    async def ainvoke(self, inp: dict[str, Any]) -> TaxBiodiversity:
         """
         Invoke the RAG chain asynchronously with the given input.
 
@@ -211,9 +214,13 @@ class WikiStellaRAGModel(BaseRetriever):
         )
         load_api_keys()
         self.vectorstore = self._set_up_retriever(vstore_path)
-        self.retriever: Any = self.vectorstore.as_retriever(
+        self.base_retriever = self.vectorstore.as_retriever(
             search_type=self.search_type, search_kwargs={"k": self.k}
         )
+        self.retriever: (
+            Runnable[str, list[Document]]
+            | RunnableSerializable[dict[Any, Any], list[Document]]
+        ) = self.base_retriever
         if multiquery:
             self._add_multiquery()
         if rerank:
@@ -251,10 +258,9 @@ class WikiStellaRAGModel(BaseRetriever):
         :param top_n: Number of top documents to retain after reranking (default is 10).
         """
         compressor = CohereRerank(model="rerank-english-v3.0", top_n=top_n)
-        compression_retriever = ContextualCompressionRetriever(
-            base_compressor=compressor, base_retriever=self.retriever
+        self.retriever = ContextualCompressionRetriever(
+            base_compressor=compressor, base_retriever=self.base_retriever
         )
-        self.retriever: Any = compression_retriever
 
     def _add_multiquery(self) -> None:
         """
@@ -294,7 +300,7 @@ class WikiStellaRAGModel(BaseRetriever):
             | (lambda x: x.queries)
         )
         # Redefine retriever to use union of output from multiple retrievals
-        self.retriever: Any = generate_queries | self.retriever.map() | unique_docs
+        self.retriever = generate_queries | self.retriever.map() | unique_docs
 
     def retrieve(self, caption: str) -> list[Document]:
         """
@@ -303,7 +309,7 @@ class WikiStellaRAGModel(BaseRetriever):
         :param caption: The caption to use for retrieval.
         :return: Retrieved documents.
         """
-        return self.retriever.invoke(input=caption)
+        return self.retriever.invoke(input={"caption": caption})
 
     async def aretrieve(self, caption: str) -> list[Document]:
         """
@@ -312,7 +318,7 @@ class WikiStellaRAGModel(BaseRetriever):
         :param caption: The caption to use for retrieval.
         :return: Retrieved documents.
         """
-        return await self.retriever.ainvoke(input=caption)
+        return await self.retriever.ainvoke(input={"caption": caption})
 
     def invoke(self, caption: str) -> TaxBiodiversity:
         """
@@ -321,7 +327,14 @@ class WikiStellaRAGModel(BaseRetriever):
         :param caption: The caption to classify and describe taxonomically.
         :return: The output of the RAG model with taxonomic information.
         """
-        return self.model.invoke(input=caption)
+        # Retrieve documents using the retriever
+        docs = self.retrieve(caption=caption)
+        # Format the retrieved documents
+        formatted_docs = format_docs(docs)
+        # Create the input for the RAG model
+        inp = {"context": formatted_docs, "caption": caption}
+        # Invoke RAG model and return results
+        return self.model.invoke(inp=inp)
 
     async def ainvoke(self, caption: str) -> TaxBiodiversity:
         """
@@ -330,4 +343,11 @@ class WikiStellaRAGModel(BaseRetriever):
         :param caption: The caption to classify and describe taxonomically.
         :return: The output of the RAG model with taxonomic information.
         """
-        return await self.model.ainvoke(input=caption)
+        # Retrieve documents using the retriever
+        docs = await self.aretrieve(caption=caption)
+        # Format the retrieved documents
+        formatted_docs = format_docs(docs)
+        # Create the input for the RAG model
+        inp = {"context": formatted_docs, "caption": caption}
+        # Invoke RAG model and return results
+        return await self.model.ainvoke(inp=inp)
