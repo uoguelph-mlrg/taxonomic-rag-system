@@ -26,7 +26,7 @@ Modules:
 Functions:
 --------
     _parse_arguments: Parses command-line args for write, output, and vectorstore paths.
-    main: Executes the Advanced RAG run, extracts metrics, and optionally writes results.
+    main: Executes Advanced RAG run, extracts metrics, and optionally writes results.
 
 Usage:
 --------

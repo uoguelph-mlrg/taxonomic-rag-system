@@ -381,7 +381,7 @@ class NaiveVLModel:
         openrouter: bool = True,
     ):
         load_api_keys()
-        cap = AsyncOpenAI(model=model) if not openrouter else None
+        cap = AsyncOpenAI() if not openrouter else None
         self.image_processor = ImageProcessor()
         self.model = TaxClassifierVLM(model=model, cap=cap)
 

@@ -118,7 +118,7 @@ class RAGChainBuilder:
         )
 
     def _build_chain(
-        self, retriever: VectorStoreRetriever
+        self, retriever: Runnable[str, list[Document]] | VectorStoreRetriever
     ) -> RunnableSerializable[Any, TaxBiodiversity]:
         """
         Construct a RAG chain using the provided retriever and a prompt.
@@ -217,10 +217,7 @@ class WikiStellaRAGModel(BaseRetriever):
         self.base_retriever = self.vectorstore.as_retriever(
             search_type=self.search_type, search_kwargs={"k": self.k}
         )
-        self.retriever: (
-            Runnable[str, list[Document]]
-            | RunnableSerializable[dict[Any, Any], list[Document]]
-        ) = self.base_retriever
+        self.retriever: RunnableSerializable[Any, list[Document]] = self.base_retriever
         if multiquery:
             self._add_multiquery()
         if rerank:
@@ -309,7 +306,7 @@ class WikiStellaRAGModel(BaseRetriever):
         :param caption: The caption to use for retrieval.
         :return: Retrieved documents.
         """
-        return self.retriever.invoke(input={"caption": caption})
+        return self.retriever.invoke(input=caption)
 
     async def aretrieve(self, caption: str) -> list[Document]:
         """
@@ -318,7 +315,7 @@ class WikiStellaRAGModel(BaseRetriever):
         :param caption: The caption to use for retrieval.
         :return: Retrieved documents.
         """
-        return await self.retriever.ainvoke(input={"caption": caption})
+        return await self.retriever.ainvoke(input=caption)
 
     def invoke(self, caption: str) -> TaxBiodiversity:
         """
