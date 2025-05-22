@@ -375,10 +375,15 @@ class NaiveVLModel:
 
     """"""
 
-    def __init__(self, model: str = "google/gemini-2.0-flash-001"):
+    def __init__(
+        self,
+        model: str = "google/gemini-2.0-flash-001",
+        openrouter: bool = True,
+    ):
         load_api_keys()
+        cap = AsyncOpenAI(model=model) if not openrouter else None
         self.image_processor = ImageProcessor()
-        self.model = TaxClassifierVLM(model=model)
+        self.model = TaxClassifierVLM(model=model, cap=cap)
 
     async def query(
         self, image_path: Optional[str] = None, image_obj: Optional[Any] = None
