@@ -19,3 +19,7 @@ wheels/
 
 # macos
 *.DS_Store
+
+# coverage files
+.coverage
+coverage.xml
