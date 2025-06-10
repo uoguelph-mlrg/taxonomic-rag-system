@@ -103,7 +103,11 @@ async def main() -> None:
     output_path = args.output
 
     # 1. Build Model, 2. RareSpecies Run, 3. Extract Results
-    model = ImageRAGModel(vstore_path=vstore_path, model="gpt-4o")
+    model = ImageRAGModel(
+        vstore_path=vstore_path, 
+        model="gpt-4o",
+        caption_max_tokens=300  # 设置较小的 token 限制用于测试
+    )
     print(f"Device: {model.get_device()}")
     rarespp_predictions = await model.rarespecies_dataset_run(verbose=2)
     overalls, preds = extract_tax_metrics_rs(rarespp_predictions, verbose=True)

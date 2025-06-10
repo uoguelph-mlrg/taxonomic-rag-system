@@ -121,12 +121,17 @@ class ImageRAGModel:
         multiquery: bool = False,
         cap: Optional[AsyncOpenAI] = None,
         model: str = "gpt-4o",
+        caption_max_tokens: int = 300,
     ):
         if cap is None:
             cap = AsyncOpenAI()
         load_api_keys()
         self.image_processor = ImageProcessor()
-        self.captioner = DescriptiveCaptioner(cap=cap, model=model)
+        self.captioner = DescriptiveCaptioner(
+            cap=cap, 
+            model=model, 
+            max_tokens=caption_max_tokens
+        )
         self.rag_model = WikiStellaRAGModel(
             vstore_path=vstore_path,
             collection_name=collection_name,

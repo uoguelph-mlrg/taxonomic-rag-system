@@ -245,6 +245,7 @@ class DescriptiveCaptioner(InstructorVLModel):
         client: The AI client instance.
         model: The model name, default is 'gpt-4o'.
         temp: The temperature setting, default is 0.
+        max_tokens: The maximum number of tokens in the generated caption.
     """
 
     def __init__(
@@ -252,10 +253,12 @@ class DescriptiveCaptioner(InstructorVLModel):
         cap: Any,
         model: str,
         temp: float = 0,
+        max_tokens: int = 300,
     ) -> None:
         if cap is None:
             cap = AsyncOpenAI()
         super().__init__(cap, model, temp)
+        self.max_tokens = max_tokens
         self.system_prompt = (
             """
         You are an expert AI vision assistant to a taxonomist that describes animals in images.
@@ -313,6 +316,7 @@ class DescriptiveCaptioner(InstructorVLModel):
         raw_resp = await self.client.chat.completions.create(
             model=self.model,
             temperature=self.temp,
+            max_tokens=self.max_tokens,
             messages=[
                 {"role": "system", "content": self.system_prompt},
                 {
