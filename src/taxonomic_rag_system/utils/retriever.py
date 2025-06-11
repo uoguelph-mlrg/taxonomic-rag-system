@@ -24,6 +24,7 @@ Dependencies:
 """
 
 import os
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,10 @@ from langchain_openai import ChatOpenAI
 # Local imports
 from taxonomic_rag_system.utils.helpers import format_docs, unique_docs
 from taxonomic_rag_system.utils.out_models import MultiQuery, TaxBiodiversity
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def load_api_keys() -> None:
@@ -258,24 +263,56 @@ class WikiStellaRAGModel(BaseRetriever):
         Set up the vector store retriever.
 
         Configure the retriever with the specified path to chroma parent dir.
+        
+        If the vector store already exists at the specified path, it will be loaded
+        without initializing a new embedding model.
 
         :return: A configured Chroma vector store.
         """
-        encode_kwargs = {
-            "normalize_embeddings": True,  # Use faster dot-product instead cosine sim
-            "batch_size": 128,
-        }
-        embeddings = HuggingFaceEmbeddings(
-            model_name=self.embedding_model,
-            model_kwargs={"device": self.device},
-            encode_kwargs=encode_kwargs,
-            show_progress=False,
-        )
-        return Chroma(  # Build and return Chroma vstore
-            embedding_function=embeddings,
-            persist_directory=vstore_path,
-            collection_name=self.collection_name,
-        )
+
+        # Original code, change back later
+        # encode_kwargs = {
+        #     "normalize_embeddings": True,  # Use faster dot-product instead cosine sim
+        #     "batch_size": 128,
+        # }
+        # embeddings = HuggingFaceEmbeddings(
+        #     model_name=self.embedding_model,
+        #     model_kwargs={"device": self.device},
+        #     encode_kwargs=encode_kwargs,
+        #     show_progress=False,
+        # )
+        # return Chroma(  # Build and return Chroma vstore
+        #     embedding_function=embeddings,
+        #     persist_directory=vstore_path,
+        #     collection_name=self.collection_name,
+        # )
+
+        try:
+            # First try to load existing vector store without embedding function
+            vectorstore = Chroma(
+                persist_directory=vstore_path,
+                collection_name=self.collection_name,
+            )
+            logger.info(f"Successfully loaded existing vector store from {vstore_path}")
+            return vectorstore
+        except ValueError as e:
+            # If loading fails, initialize embedding model and create new vector store
+            logger.info("Creating new vector store with embedding model...")
+            encode_kwargs = {
+                "normalize_embeddings": True,  # Use faster dot-product instead cosine sim
+                "batch_size": 128,
+            }
+            embeddings = HuggingFaceEmbeddings(
+                model_name=self.embedding_model,
+                model_kwargs={"device": self.device},
+                encode_kwargs=encode_kwargs,
+                show_progress=False,
+            )
+            return Chroma(
+                embedding_function=embeddings,
+                persist_directory=vstore_path,
+                collection_name=self.collection_name,
+            )
 
     def _add_reranker(self, top_n: int = 10) -> None:
         """
