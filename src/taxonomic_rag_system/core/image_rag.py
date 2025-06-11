@@ -123,9 +123,9 @@ class ImageRAGModel:
         model: str = "gpt-4o",
         caption_max_tokens: int = 300,
     ):
+        load_api_keys()
         if cap is None:
             cap = AsyncOpenAI()
-        load_api_keys()
         self.image_processor = ImageProcessor()
         self.captioner = DescriptiveCaptioner(
             cap=cap, 
