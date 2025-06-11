@@ -55,6 +55,7 @@ repository = "https://github.com/uoguelph-mlrg/taxonomic-rag-system"
 requires-python = ">=3.12"
 dependencies = [
     "backoff>=2.2.1",
+    "chromadb>=1.0.12",
     "instructor>=1.7.9",
     "pillow>=11.2.1",
     "pydantic>=2.11.3",
