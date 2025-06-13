@@ -263,41 +263,48 @@ class WikiStellaRAGModel(BaseRetriever):
         Set up the vector store retriever.
 
         Configure the retriever with the specified path to chroma parent dir.
-        
-        If the vector store already exists at the specified path, it will be loaded
-        without initializing a new embedding model.
+        The logic is:
+        1. If the provided directory is writable, attempt to load the collection in
+           normal (read-write) mode. If it fails due to DB version/init issues we
+           fall through to rebuilding with embeddings.
+        2. If the directory is **not** writable, or Chroma raises a read-only error,
+           fall back to opening the DB in `read_only=True` mode so that inference
+           can still run.
+        3. If the collection does not exist, create a new one with embeddings ‑ this
+           obviously requires write permission.
 
         :return: A configured Chroma vector store.
         """
 
-        # Original code, change back later
-        # encode_kwargs = {
-        #     "normalize_embeddings": True,  # Use faster dot-product instead cosine sim
-        #     "batch_size": 128,
-        # }
-        # embeddings = HuggingFaceEmbeddings(
-        #     model_name=self.embedding_model,
-        #     model_kwargs={"device": self.device},
-        #     encode_kwargs=encode_kwargs,
-        #     show_progress=False,
-        # )
-        # return Chroma(  # Build and return Chroma vstore
-        #     embedding_function=embeddings,
-        #     persist_directory=vstore_path,
-        #     collection_name=self.collection_name,
-        # )
+        from chromadb.config import Settings
+        import chromadb
 
-        try:
-            # First try to load existing vector store without embedding function
-            vectorstore = Chroma(
+        def _make_client(read_only: bool = False):
+            settings = Settings(
+                chroma_db_impl="duckdb+parquet",
                 persist_directory=vstore_path,
-                collection_name=self.collection_name,
+                read_only=read_only,
             )
-            logger.info(f"Successfully loaded existing vector store from {vstore_path}")
+            return Chroma(collection_name=self.collection_name, client_settings=settings)
+
+        # Case 1 ‑ directory is not writable → open read-only directly
+        if not os.access(vstore_path, os.W_OK):
+            logger.info("Vector store directory not writable, opening in read-only mode.")
+            return _make_client(read_only=True)
+
+        # Case 2 ‑ try read-write load first
+        try:
+            vectorstore = _make_client(read_only=False)
+            logger.info(f"Successfully loaded vector store in read-write mode from {vstore_path}")
             return vectorstore
-        except ValueError as e:
-            # If loading fails, initialize embedding model and create new vector store
-            logger.info("Creating new vector store with embedding model...")
+        except chromadb.errors.InternalError as err:
+            if "readonly" in str(err).lower():
+                logger.warning("Encountered readonly database error; reopening in read-only mode.")
+                return _make_client(read_only=True)
+            raise  # re-raise other InternalErrors
+        except ValueError:
+            # Collection does not exist – need to create new one (requires embeddings)
+            logger.info("Collection not found; creating new vector store with embeddings …")
             encode_kwargs = {
                 "normalize_embeddings": True,  # Use faster dot-product instead cosine sim
                 "batch_size": 128,
