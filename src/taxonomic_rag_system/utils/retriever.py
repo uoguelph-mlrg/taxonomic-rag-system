@@ -275,7 +275,7 @@ class WikiStellaRAGModel(BaseRetriever):
 
         :return: A configured Chroma vector store.
         """
-
+        
         from chromadb.config import Settings
         import chromadb
 
@@ -289,18 +289,24 @@ class WikiStellaRAGModel(BaseRetriever):
 
         # Case 1 ‑ directory is not writable → open read-only directly
         if not os.access(vstore_path, os.W_OK):
-            logger.info("Vector store directory not writable, opening in read-only mode.")
+            logger.info("Vector store directory not writable, attempting to create with proper permissions...")
+            try:
+                # Try to create directory with proper permissions
+                Path(vstore_path).mkdir(parents=True, exist_ok=True)
+                os.chmod(vstore_path, 0o755)  # rwxr-xr-x
+            except PermissionError:
+                logger.warning("Could not set permissions on vector store directory. Some operations may fail.")
             return _make_client(read_only=True)
 
         # Case 2 ‑ try read-write load first
         try:
-            vectorstore = _make_client(read_only=False)
-            logger.info(f"Successfully loaded vector store in read-write mode from {vstore_path}")
+            vectorstore = _make_client()
+            logger.info(f"Successfully loaded vector store from {vstore_path}")
             return vectorstore
         except chromadb.errors.InternalError as err:
             if "readonly" in str(err).lower():
-                logger.warning("Encountered readonly database error; reopening in read-only mode.")
-                return _make_client(read_only=True)
+                logger.warning("Encountered readonly database error. Please check directory permissions.")
+                raise
             raise  # re-raise other InternalErrors
         except ValueError:
             # Collection does not exist – need to create new one (requires embeddings)
