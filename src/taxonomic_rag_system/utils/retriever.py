@@ -264,44 +264,19 @@ class WikiStellaRAGModel(BaseRetriever):
 
         Configure the retriever with the specified path to chroma parent dir.
         The logic is:
-        1. If the provided directory is writable, attempt to load the collection in
-           normal (read-write) mode. If it fails due to DB version/init issues we
-           fall through to rebuilding with embeddings.
-        2. If the directory is **not** writable, or Chroma raises a read-only error,
-           fall back to opening the DB in `read_only=True` mode so that inference
-           can still run.
-        3. If the collection does not exist, create a new one with embeddings ‑ this
-           obviously requires write permission.
+        1. Try to load the existing collection
+        2. If the collection does not exist, create a new one with embeddings
 
         :return: A configured Chroma vector store.
         """
 
-        from chromadb.config import Settings
-        import chromadb
-
-        def _make_client(read_only: bool = False):
-            settings = Settings(
-                chroma_db_impl="duckdb+parquet",
-                persist_directory=vstore_path,
-                read_only=read_only,
-            )
-            return Chroma(collection_name=self.collection_name, client_settings=settings)
-
-        # Case 1 ‑ directory is not writable → open read-only directly
-        if not os.access(vstore_path, os.W_OK):
-            logger.info("Vector store directory not writable, opening in read-only mode.")
-            return _make_client(read_only=True)
-
-        # Case 2 ‑ try read-write load first
         try:
-            vectorstore = _make_client(read_only=False)
-            logger.info(f"Successfully loaded vector store in read-write mode from {vstore_path}")
+            vectorstore = Chroma(
+                collection_name=self.collection_name,
+                persist_directory=vstore_path
+            )
+            logger.info(f"Successfully loaded vector store from {vstore_path}")
             return vectorstore
-        except chromadb.errors.InternalError as err:
-            if "readonly" in str(err).lower():
-                logger.warning("Encountered readonly database error; reopening in read-only mode.")
-                return _make_client(read_only=True)
-            raise  # re-raise other InternalErrors
         except ValueError:
             # Collection does not exist – need to create new one (requires embeddings)
             logger.info("Collection not found; creating new vector store with embeddings …")
