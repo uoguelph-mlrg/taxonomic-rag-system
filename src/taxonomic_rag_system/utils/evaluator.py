@@ -55,7 +55,7 @@ class RareSpeciesImageClassDataset(Dataset):
         # Load the dataset from HuggingFace
         ds = load_dataset("imageomics/rare-species")
         # ds = ds["train"].select(range(0, 999))
-        ds = ds["train"].select(range(0, 5))
+        ds = ds["train"].select(range(0, 199))
         # Map the processing function, filtering out None results
         processed_ds = ds.map(process_row)
         print(f"Pre-filter LENGTH: {processed_ds.num_rows}")
