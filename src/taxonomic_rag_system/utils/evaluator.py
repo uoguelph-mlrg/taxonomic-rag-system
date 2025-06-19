@@ -163,11 +163,11 @@ def process_row(row: Dict[str, Any]) -> Dict[str, Any]:
     """
     try:
         # Check if the image object has the 'getexif' attribute without loading it
-        if not hasattr(row["image"], "getexif"):
+        if not hasattr(row["file_name"], "getexif"):
             raise AttributeError
 
         return {
-            "image": row["image"],
+            "image": row["file_name"],
             "class_dict": {
                 "RSID": row["rarespecies_id"],
                 "Kingdom": row["kingdom"],
