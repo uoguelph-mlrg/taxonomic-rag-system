@@ -23,6 +23,3 @@ wheels/
 # coverage files
 .coverage
 coverage.xml
-
-# sbatch files
-submit_jobs_vector_cluster.sh
