@@ -142,7 +142,7 @@ class ImageRAGModel:
         multiquery: bool = False,
         cap: Optional[AsyncOpenAI] = None,
         model: str = "gpt-4o",
-        caption_max_tokens: int = 300,
+        caption_max_tokens: int = 50000,
     ):
         load_api_keys()
         if cap is None:

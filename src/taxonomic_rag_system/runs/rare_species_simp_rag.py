@@ -105,7 +105,7 @@ async def main() -> None:
     model = ImageRAGModel(
         vstore_path=vstore_path, 
         model="gpt-4o",
-        caption_max_tokens=300  # 设置较小的 token 限制用于测试
+        caption_max_tokens=50000 # Set a small token limit for testing
     )
     print(f"Device: {model.get_device()}")
     rarespp_predictions = await model.rarespecies_dataset_run(verbose=2)
