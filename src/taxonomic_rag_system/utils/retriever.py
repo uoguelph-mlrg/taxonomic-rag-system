@@ -269,27 +269,29 @@ class WikiStellaRAGModel(BaseRetriever):
 
         :return: A configured Chroma vector store.
         """
+        # Always create embeddings function for consistency
+        encode_kwargs = {
+            "normalize_embeddings": True,  # Use faster dot-product instead cosine sim
+            "batch_size": 128,
+        }
+        embeddings = HuggingFaceEmbeddings(
+            model_name=self.embedding_model,
+            model_kwargs={"device": self.device},
+            encode_kwargs=encode_kwargs,
+            show_progress=False,
+        )
 
         try:
             vectorstore = Chroma(
                 collection_name=self.collection_name,
-                persist_directory=vstore_path
+                persist_directory=vstore_path,
+                embedding_function=embeddings
             )
             logger.info(f"Successfully loaded vector store from {vstore_path}")
             return vectorstore
         except ValueError:
             # Collection does not exist – need to create new one (requires embeddings)
             logger.info("Collection not found; creating new vector store with embeddings …")
-            encode_kwargs = {
-                "normalize_embeddings": True,  # Use faster dot-product instead cosine sim
-                "batch_size": 128,
-            }
-            embeddings = HuggingFaceEmbeddings(
-                model_name=self.embedding_model,
-                model_kwargs={"device": self.device},
-                encode_kwargs=encode_kwargs,
-                show_progress=False,
-            )
             return Chroma(
                 embedding_function=embeddings,
                 persist_directory=vstore_path,
