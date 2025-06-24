@@ -38,6 +38,8 @@ Usage:
 import argparse
 import asyncio
 import datetime
+import os
+from pathlib import Path
 
 from taxonomic_rag_system.core.image_rag import ImageRAGModel
 
@@ -104,14 +106,17 @@ async def main() -> None:
     # 1. Build Model, 2. RareSpecies Run, 3. Extract Results
     model = ImageRAGModel(
         vstore_path=vstore_path, 
-        model="gpt-4o",
-        caption_max_tokens=50000 # Set a small token limit for testing
+        model="gpt-4o"
     )
     print(f"Device: {model.get_device()}")
     rarespp_predictions = await model.rarespecies_dataset_run(verbose=2)
     overalls, preds = extract_tax_metrics_rs(rarespp_predictions, verbose=True)
 
     if write:
+        # Create output directory if it doesn't exist
+        if output_path:
+            Path(output_path).mkdir(parents=True, exist_ok=True)
+        
         current_date = datetime.datetime.now().strftime("%Y-%m-%d")  # Grab current date
         current_time = datetime.datetime.now().strftime("%H-%M-%S")  # Grab current time
         final_metrics_csv_name = str(

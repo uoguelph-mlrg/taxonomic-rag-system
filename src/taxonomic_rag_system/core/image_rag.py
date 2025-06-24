@@ -141,8 +141,7 @@ class ImageRAGModel:
         rerank: bool = False,
         multiquery: bool = False,
         cap: Optional[AsyncOpenAI] = None,
-        model: str = "gpt-4o",
-        caption_max_tokens: int = 50000,
+        model: str = "gpt-4o"
     ):
         load_api_keys()
         if cap is None:
@@ -151,7 +150,6 @@ class ImageRAGModel:
         self.captioner = DescriptiveCaptioner(
             cap=cap, 
             model=model, 
-            max_tokens=caption_max_tokens
         )
         self.rag_model = WikiStellaRAGModel(
             vstore_path=vstore_path,
