@@ -89,6 +89,44 @@ def load_api_keys() -> None:
               "This is fine if you're not using reranking functionality.")
 
 
+class SafeHuggingFaceEmbeddings:
+    """
+    A safe wrapper around HuggingFaceEmbeddings that ensures all inputs are strings.
+    
+    This prevents 'dict' object has no attribute 'replace' errors by converting
+    any non-string inputs to strings before passing them to the underlying embeddings.
+    """
+    
+    def __init__(self, **kwargs):
+        self.embeddings = HuggingFaceEmbeddings(**kwargs)
+    
+    def embed_documents(self, texts):
+        """Safely embed documents by ensuring all inputs are strings."""
+        safe_texts = []
+        for text in texts:
+            if isinstance(text, str):
+                safe_texts.append(text)
+            elif isinstance(text, dict):
+                safe_texts.append(str(text))
+            else:
+                safe_texts.append(str(text))
+        return self.embeddings.embed_documents(safe_texts)
+    
+    def embed_query(self, text):
+        """Safely embed a query by ensuring the input is a string."""
+        if isinstance(text, str):
+            safe_text = text
+        elif isinstance(text, dict):
+            safe_text = str(text)
+        else:
+            safe_text = str(text)
+        return self.embeddings.embed_query(safe_text)
+    
+    def __getattr__(self, name):
+        """Delegate all other attributes to the underlying embeddings."""
+        return getattr(self.embeddings, name)
+
+
 class RAGChainBuilder:
     """
     Build and manage a Taxonomic RAG chain.
@@ -310,7 +348,7 @@ class WikiStellaRAGModel(BaseRetriever):
             "normalize_embeddings": True,  # Use faster dot-product instead cosine sim
             "batch_size": 128,
         }
-        embeddings = HuggingFaceEmbeddings(
+        embeddings = SafeHuggingFaceEmbeddings(
             model_name=self.embedding_model,
             model_kwargs={"device": self.device},
             encode_kwargs=encode_kwargs,

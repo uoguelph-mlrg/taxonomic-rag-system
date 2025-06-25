@@ -54,6 +54,7 @@ from langchain_core.documents import Document
 from openai import AsyncOpenAI
 
 from taxonomic_rag_system.utils.out_models import Chunk
+from taxonomic_rag_system.utils.retriever import SafeHuggingFaceEmbeddings
 
 
 # Configure logging
@@ -418,7 +419,7 @@ def build_vectorstore_from(
         "normalize_embeddings": True,
         "batch_size": 128,
     }
-    embeddings = HuggingFaceEmbeddings(
+    embeddings = SafeHuggingFaceEmbeddings(
         model_name=embedding_model,
         model_kwargs={"device": device},
         encode_kwargs=encode_kwargs,
