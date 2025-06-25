@@ -145,32 +145,61 @@ def unique_docs(docs: List[List[Document]]) -> List[Document]:
         for sublist in docs:
             for doc in sublist:
                 try:
-                    flattened_docs.append(dumps(doc))
+                    # Ensure document content is serializable
+                    if hasattr(doc, 'page_content') and hasattr(doc, 'metadata'):
+                        # Verify that page_content is a string
+                        page_content = str(doc.page_content) if doc.page_content else ""
+                        # Verify that metadata is a dictionary and is serializable
+                        metadata = doc.metadata if isinstance(doc.metadata, dict) else {}
+                        
+                        # Create a temporary document to test serialization
+                        temp_doc = Document(page_content=page_content, metadata=metadata)
+                        flattened_docs.append(dumps(temp_doc))
+                    else:
+                        # If the document structure is incorrect, create a simplified version
+                        simple_content = str(doc) if doc else ""
+                        simple_doc = Document(page_content=simple_content, metadata={})
+                        flattened_docs.append(dumps(simple_doc))
                 except Exception as e:
                     print(f"Error serializing document: {e}")
-                    # 创建一个简化的文档表示
-                    simple_doc = f"metadata:{getattr(doc, 'metadata', {})};content:{getattr(doc, 'page_content', '')}"
-                    flattened_docs.append(simple_doc)
+                    # Creating a secure document representation
+                    safe_content = f"Error processing document: {str(e)}"
+                    safe_doc = Document(page_content=safe_content, metadata={})
+                    flattened_docs.append(dumps(safe_doc))
         
-        unique_chunks = list(set(flattened_docs))  # Keep only unique chunks
+        # Get unique strings
+        unique_strings = list(set(flattened_docs))
         
-        # 尝试加载回Document对象
-        result_docs = []
-        for doc_str in unique_chunks:
+        # Convert back to Document objects
+        unique_document_objects = []
+        for doc_str in unique_strings:
             try:
-                result_docs.append(loads(doc_str))
+                doc = loads(doc_str)
+                # Verify the validity of the document again
+                if hasattr(doc, 'page_content') and hasattr(doc, 'metadata'):
+                    # Make sure page_content is a string
+                    if not isinstance(doc.page_content, str):
+                        doc.page_content = str(doc.page_content)
+                    # Make sure metadata is a string
+                    if not isinstance(doc.metadata, dict):
+                        doc.metadata = {}
+                    unique_document_objects.append(doc)
+                else:
+                    # If the document is invalid, create a default document
+                    default_doc = Document(page_content="Invalid document", metadata={})
+                    unique_document_objects.append(default_doc)
             except Exception as e:
                 print(f"Error deserializing document: {e}")
-                # 如果反序列化失败，创建一个简单的Document对象
-                from langchain_core.documents import Document
-                result_docs.append(Document(page_content=str(doc_str), metadata={}))
+                # Create an error document
+                error_doc = Document(page_content=f"Deserialization error: {str(e)}", metadata={})
+                unique_document_objects.append(error_doc)
         
-        return result_docs
+        return unique_document_objects
+        
     except Exception as e:
-        print(f"Error in unique_docs: {e}")
-        # 如果所有都失败了，返回原始的扁平化列表
-        flattened = [doc for sublist in docs for doc in sublist]
-        return flattened
+        print(f"Critical error in unique_docs: {e}")
+        # Return an empty list instead of crashing the program
+        return []
 
 
 def simple_string_output(out_dict: Dict[str, Union[str, Dict[str, str]]]) -> str:

@@ -376,11 +376,34 @@ class WikiStellaRAGModel(BaseRetriever):
             input_variables=["caption"],
             partial_variables={"format_instructions": parser.get_format_instructions()},
         )
+        
+        # Make sure the generated query is a list of strings
+        def extract_and_validate_queries(x) -> list[str]:
+            """Extract queries and ensure they are strings."""
+            try:
+                queries = x.queries if hasattr(x, 'queries') else x
+                # Make sure all queries are strings
+                validated_queries = []
+                for query in queries:
+                    if isinstance(query, str):
+                        validated_queries.append(query)
+                    elif isinstance(query, dict):
+                        # If it is a dictionary, converting it to a string
+                        validated_queries.append(str(query))
+                    else:
+                        # Other types are also converted to strings
+                        validated_queries.append(str(query))
+                return validated_queries
+            except Exception as e:
+                print(f"Error in extract_and_validate_queries: {e}")
+                # Return the original caption as an alternative
+                return [str(x)]
+        
         generate_queries = (
             prompt_perspectives
             | ChatOpenAI(model="gpt-4o-mini")
             | parser
-            | (lambda x: x.queries)
+            | extract_and_validate_queries
         )
         # Redefine retriever to use union of output from multiple retrievals
         self.retriever = generate_queries | self.retriever.map() | unique_docs
@@ -392,7 +415,9 @@ class WikiStellaRAGModel(BaseRetriever):
         :param caption: The caption to use for retrieval.
         :return: Retrieved documents.
         """
-        return self.retriever.invoke(input=caption)
+        # Make sure caption is a string
+        safe_caption = str(caption) if not isinstance(caption, str) else caption
+        return self.retriever.invoke(input=safe_caption)
 
     async def aretrieve(self, caption: str) -> list[Document]:
         """
@@ -401,7 +426,9 @@ class WikiStellaRAGModel(BaseRetriever):
         :param caption: The caption to use for retrieval.
         :return: Retrieved documents.
         """
-        return await self.retriever.ainvoke(input=caption)
+        # Make sure caption is a string
+        safe_caption = str(caption) if not isinstance(caption, str) else caption
+        return await self.retriever.ainvoke(input=safe_caption)
 
     def invoke(self, caption: str) -> TaxBiodiversity:
         """
