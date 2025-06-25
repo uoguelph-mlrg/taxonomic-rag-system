@@ -107,29 +107,7 @@ def format_docs(docs: List[Document]) -> str:
     :param docs: Retrieved document chunks
     :return: Single string containing all fetched document chunks
     """
-    formatted_docs = []
-    for doc in docs:
-        try:
-            # 确保 metadata 被正确转换为字符串
-            if hasattr(doc, 'metadata') and doc.metadata:
-                # 尝试多种方式来安全地转换 metadata
-                if isinstance(doc.metadata, dict):
-                    metadata_str = str(doc.metadata)
-                else:
-                    metadata_str = str(doc.metadata)
-            else:
-                metadata_str = "{}"
-            
-            # 确保 page_content 是字符串
-            page_content = str(doc.page_content) if hasattr(doc, 'page_content') else ""
-            
-            formatted_docs.append(f"{metadata_str}\n{page_content}")
-        except Exception as e:
-            # 如果出现任何错误，使用更安全的格式
-            print(f"Error formatting document: {e}")
-            formatted_docs.append(f"Source: Unknown\n{getattr(doc, 'page_content', 'No content')}")
-    
-    return "\n\n".join(formatted_docs)
+    return "\n\n".join(f"{str(doc.metadata)}\n{doc.page_content}" for doc in docs)
 
 
 def unique_docs(docs: List[List[Document]]) -> List[Document]:
@@ -139,68 +117,10 @@ def unique_docs(docs: List[List[Document]]) -> List[Document]:
     :param docs: All retrieved document chunks (from several retrievals) with duplicates
     :return: Unique document chunks
     """
-    try:
-        # Flatten list of lists and convert each to string
-        flattened_docs = []
-        for sublist in docs:
-            for doc in sublist:
-                try:
-                    # Ensure document content is serializable
-                    if hasattr(doc, 'page_content') and hasattr(doc, 'metadata'):
-                        # Verify that page_content is a string
-                        page_content = str(doc.page_content) if doc.page_content else ""
-                        # Verify that metadata is a dictionary and is serializable
-                        metadata = doc.metadata if isinstance(doc.metadata, dict) else {}
-                        
-                        # Create a temporary document to test serialization
-                        temp_doc = Document(page_content=page_content, metadata=metadata)
-                        flattened_docs.append(dumps(temp_doc))
-                    else:
-                        # If the document structure is incorrect, create a simplified version
-                        simple_content = str(doc) if doc else ""
-                        simple_doc = Document(page_content=simple_content, metadata={})
-                        flattened_docs.append(dumps(simple_doc))
-                except Exception as e:
-                    print(f"Error serializing document: {e}")
-                    # Creating a secure document representation
-                    safe_content = f"Error processing document: {str(e)}"
-                    safe_doc = Document(page_content=safe_content, metadata={})
-                    flattened_docs.append(dumps(safe_doc))
-        
-        # Get unique strings
-        unique_strings = list(set(flattened_docs))
-        
-        # Convert back to Document objects
-        unique_document_objects = []
-        for doc_str in unique_strings:
-            try:
-                doc = loads(doc_str)
-                # Verify the validity of the document again
-                if hasattr(doc, 'page_content') and hasattr(doc, 'metadata'):
-                    # Make sure page_content is a string
-                    if not isinstance(doc.page_content, str):
-                        doc.page_content = str(doc.page_content)
-                    # Make sure metadata is a string
-                    if not isinstance(doc.metadata, dict):
-                        doc.metadata = {}
-                    unique_document_objects.append(doc)
-                else:
-                    # If the document is invalid, create a default document
-                    default_doc = Document(page_content="Invalid document", metadata={})
-                    unique_document_objects.append(default_doc)
-            except Exception as e:
-                print(f"Error deserializing document: {e}")
-                # Create an error document
-                error_doc = Document(page_content=f"Deserialization error: {str(e)}", metadata={})
-                unique_document_objects.append(error_doc)
-        
-        return unique_document_objects
-        
-    except Exception as e:
-        print(f"Critical error in unique_docs: {e}")
-        # Return an empty list instead of crashing the program
-        return []
-
+    # Flatten list of lists and convert each to string
+    flattened_docs = [dumps(doc) for sublist in docs for doc in sublist]
+    unique_chunks = list(set(flattened_docs))   # Keep only unique chunks
+    return [loads(doc) for doc in unique_chunks]
 
 def simple_string_output(out_dict: Dict[str, Union[str, Dict[str, str]]]) -> str:
     """Generate a formatted string representation of taxonomic classification details.
@@ -217,14 +137,9 @@ def simple_string_output(out_dict: Dict[str, Union[str, Dict[str, str]]]) -> str
     -------
         str: A formatted string containing the model's structured outputs.
     """
-    # Convert guess_class dict to string if it's a dictionary
-    guess_class_str = out_dict["guess_class"]
-    if isinstance(guess_class_str, dict):
-        guess_class_str = "\n".join([f"{k}: {v}" for k, v in guess_class_str.items()])
-    
     return f"""
 Taxonomic Classification:
-{guess_class_str}
+{out_dict["guess_class"]}
 Ancestral features:
 {out_dict["ancestral"]}
 Organismal features:

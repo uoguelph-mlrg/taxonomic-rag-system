@@ -197,21 +197,13 @@ class RAGChainBuilder:
 
         :return: The constructed RAG chain.
         """
-        # 创建一个安全的格式化函数来确保所有内容都是字符串
-        def safe_format_docs(docs: list[Document]) -> str:
-            try:
-                return format_docs(docs)
-            except Exception as e:
-                print(f"Error in format_docs: {e}")
-                # 使用更安全的格式化方法
-                return "\n\n".join(f"Source: {str(doc.metadata.get('source', 'Unknown'))}\n{doc.page_content}" for doc in docs)
-        
         return (
-            {"context": retriever | safe_format_docs, "caption": RunnablePassthrough()}
+            {"context": retriever | format_docs, "caption": RunnablePassthrough()}
             | self.prompt
             | self.llm
             | self.output_parser
         )
+    
 
     def invoke(self, inp: dict[str, Any]) -> TaxBiodiversity:
         """
@@ -229,34 +221,7 @@ class RAGChainBuilder:
         :param inp: The input data.
         :return: The output of the RAG chain.
         """
-        try:
-            print(f"RAGChainBuilder.ainvoke called with input keys: {list(inp.keys())}")
-            result = await self.rag_chain.ainvoke(input=inp)
-            print(f"RAGChainBuilder.ainvoke completed successfully")
-            return result
-        except Exception as e:
-            import traceback
-            print(f"Error in RAGChainBuilder.ainvoke:")
-            print(f"Error type: {type(e).__name__}")
-            print(f"Error message: {str(e)}")
-            print(f"Full traceback:")
-            traceback.print_exc()
-            # 返回一个默认的结果而不是让错误传播
-            return TaxBiodiversity(
-                classification={
-                    "Kingdom": "Animalia",
-                    "Phylum": "N/A",
-                    "Class": "N/A",
-                    "Order": "N/A",
-                    "Family": "N/A",
-                    "Genus": "N/A",
-                    "Species": "N/A",
-                },
-                ancestral="Error occurred during processing",
-                specific="Error occurred during processing",
-                commentary="Error occurred during processing",
-                bio_knowledge="Error occurred during processing",
-            )
+        return await self.rag_chain.ainvoke(input=inp)
 
 
 class BaseRetriever:
@@ -415,33 +380,11 @@ class WikiStellaRAGModel(BaseRetriever):
             partial_variables={"format_instructions": parser.get_format_instructions()},
         )
         
-        # Make sure the generated query is a list of strings
-        def extract_and_validate_queries(x) -> list[str]:
-            """Extract queries and ensure they are strings."""
-            try:
-                queries = x.queries if hasattr(x, 'queries') else x
-                # Make sure all queries are strings
-                validated_queries = []
-                for query in queries:
-                    if isinstance(query, str):
-                        validated_queries.append(query)
-                    elif isinstance(query, dict):
-                        # If it is a dictionary, converting it to a string
-                        validated_queries.append(str(query))
-                    else:
-                        # Other types are also converted to strings
-                        validated_queries.append(str(query))
-                return validated_queries
-            except Exception as e:
-                print(f"Error in extract_and_validate_queries: {e}")
-                # Return the original caption as an alternative
-                return [str(x)]
-        
         generate_queries = (
             prompt_perspectives
             | ChatOpenAI(model="gpt-4o-mini")
             | parser
-            | extract_and_validate_queries
+            | (lambda x: x.queries)
         )
         # Redefine retriever to use union of output from multiple retrievals
         self.retriever = generate_queries | self.retriever.map() | unique_docs
@@ -453,9 +396,7 @@ class WikiStellaRAGModel(BaseRetriever):
         :param caption: The caption to use for retrieval.
         :return: Retrieved documents.
         """
-        # Make sure caption is a string
-        safe_caption = str(caption) if not isinstance(caption, str) else caption
-        return self.retriever.invoke(input=safe_caption)
+        return self.retriever.invoke(input=caption)
 
     async def aretrieve(self, caption: str) -> list[Document]:
         """
@@ -464,9 +405,7 @@ class WikiStellaRAGModel(BaseRetriever):
         :param caption: The caption to use for retrieval.
         :return: Retrieved documents.
         """
-        # Make sure caption is a string
-        safe_caption = str(caption) if not isinstance(caption, str) else caption
-        return await self.retriever.ainvoke(input=safe_caption)
+        return await self.retriever.ainvoke(input=caption)
 
     def invoke(self, caption: str) -> TaxBiodiversity:
         """
@@ -491,40 +430,11 @@ class WikiStellaRAGModel(BaseRetriever):
         :param caption: The caption to classify and describe taxonomically.
         :return: The output of the RAG model with taxonomic information.
         """
-        try:
-            print(f"WikiStellaRAGModel.ainvoke called with caption: {caption[:100]}...")
-            # Retrieve documents using the retriever
-            docs = await self.aretrieve(caption=caption)
-            print(f"Retrieved {len(docs)} documents")
-            # Format the retrieved documents
-            formatted_docs = format_docs(docs)
-            print(f"Formatted docs length: {len(formatted_docs)}")
-            # Create the input for the RAG model
-            inp = {"context": formatted_docs, "caption": caption}
-            # Invoke RAG model and return results
-            result = await self.model.ainvoke(inp=inp)
-            print(f"WikiStellaRAGModel.ainvoke completed successfully")
-            return result
-        except Exception as e:
-            import traceback
-            print(f"Error in WikiStellaRAGModel.ainvoke:")
-            print(f"Error type: {type(e).__name__}")
-            print(f"Error message: {str(e)}")
-            print(f"Full traceback:")
-            traceback.print_exc()
-            # 返回一个默认的结果
-            return TaxBiodiversity(
-                classification={
-                    "Kingdom": "Animalia",
-                    "Phylum": "N/A",
-                    "Class": "N/A",
-                    "Order": "N/A",
-                    "Family": "N/A",
-                    "Genus": "N/A",
-                    "Species": "N/A",
-                },
-                ancestral="Error occurred during retrieval",
-                specific="Error occurred during retrieval",
-                commentary="Error occurred during retrieval",
-                bio_knowledge="Error occurred during retrieval",
-            )
+        # Retrieve documents using the retriever
+        docs = await self.aretrieve(caption=caption)
+        # Format the retrieved documents
+        formatted_docs = format_docs(docs)
+        # Create the input for the RAG model
+        inp = {"context": formatted_docs, "caption": caption}
+        # Invoke RAG model and return results
+        return await self.model.ainvoke(inp=inp)

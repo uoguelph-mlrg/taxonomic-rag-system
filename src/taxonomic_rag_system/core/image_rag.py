@@ -218,16 +218,10 @@ class ImageRAGModel:
             if context:
                 docs = await self.rag_model.aretrieve(caption=caption)
                 cntxt = "\n\n".join(
-                    [f"{str(d.metadata)}\n{d.page_content}" for d in docs]
-                )  # Convert to string
+                    [f"{d.metadata}\n{d.page_content}" for d in docs]
+                )
         except Exception as er:
-            import traceback
-            print(f"Full error traceback:")
-            traceback.print_exc()
-            print(f"Error type: {type(er).__name__}")
-            print(f"Error message: {str(er)}")
-            print(f"Error occurred during query_image processing")
-            
+            print(f"{er} occurred")
             caption = ""
             results = TaxBiodiversity(
                 classification={
