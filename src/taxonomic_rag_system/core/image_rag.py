@@ -221,7 +221,13 @@ class ImageRAGModel:
                     [f"{str(d.metadata)}\n{d.page_content}" for d in docs]
                 )  # Convert to string
         except Exception as er:
-            print(f"{er} occurred")
+            import traceback
+            print(f"Full error traceback:")
+            traceback.print_exc()
+            print(f"Error type: {type(er).__name__}")
+            print(f"Error message: {str(er)}")
+            print(f"Error occurred during query_image processing")
+            
             caption = ""
             results = TaxBiodiversity(
                 classification={

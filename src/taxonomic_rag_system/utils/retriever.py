@@ -191,7 +191,34 @@ class RAGChainBuilder:
         :param inp: The input data.
         :return: The output of the RAG chain.
         """
-        return await self.rag_chain.ainvoke(input=inp)
+        try:
+            print(f"RAGChainBuilder.ainvoke called with input keys: {list(inp.keys())}")
+            result = await self.rag_chain.ainvoke(input=inp)
+            print(f"RAGChainBuilder.ainvoke completed successfully")
+            return result
+        except Exception as e:
+            import traceback
+            print(f"Error in RAGChainBuilder.ainvoke:")
+            print(f"Error type: {type(e).__name__}")
+            print(f"Error message: {str(e)}")
+            print(f"Full traceback:")
+            traceback.print_exc()
+            # 返回一个默认的结果而不是让错误传播
+            return TaxBiodiversity(
+                classification={
+                    "Kingdom": "Animalia",
+                    "Phylum": "N/A",
+                    "Class": "N/A",
+                    "Order": "N/A",
+                    "Family": "N/A",
+                    "Genus": "N/A",
+                    "Species": "N/A",
+                },
+                ancestral="Error occurred during processing",
+                specific="Error occurred during processing",
+                commentary="Error occurred during processing",
+                bio_knowledge="Error occurred during processing",
+            )
 
 
 class BaseRetriever:
@@ -399,11 +426,40 @@ class WikiStellaRAGModel(BaseRetriever):
         :param caption: The caption to classify and describe taxonomically.
         :return: The output of the RAG model with taxonomic information.
         """
-        # Retrieve documents using the retriever
-        docs = await self.aretrieve(caption=caption)
-        # Format the retrieved documents
-        formatted_docs = format_docs(docs)
-        # Create the input for the RAG model
-        inp = {"context": formatted_docs, "caption": caption}
-        # Invoke RAG model and return results
-        return await self.model.ainvoke(inp=inp)
+        try:
+            print(f"WikiStellaRAGModel.ainvoke called with caption: {caption[:100]}...")
+            # Retrieve documents using the retriever
+            docs = await self.aretrieve(caption=caption)
+            print(f"Retrieved {len(docs)} documents")
+            # Format the retrieved documents
+            formatted_docs = format_docs(docs)
+            print(f"Formatted docs length: {len(formatted_docs)}")
+            # Create the input for the RAG model
+            inp = {"context": formatted_docs, "caption": caption}
+            # Invoke RAG model and return results
+            result = await self.model.ainvoke(inp=inp)
+            print(f"WikiStellaRAGModel.ainvoke completed successfully")
+            return result
+        except Exception as e:
+            import traceback
+            print(f"Error in WikiStellaRAGModel.ainvoke:")
+            print(f"Error type: {type(e).__name__}")
+            print(f"Error message: {str(e)}")
+            print(f"Full traceback:")
+            traceback.print_exc()
+            # 返回一个默认的结果
+            return TaxBiodiversity(
+                classification={
+                    "Kingdom": "Animalia",
+                    "Phylum": "N/A",
+                    "Class": "N/A",
+                    "Order": "N/A",
+                    "Family": "N/A",
+                    "Genus": "N/A",
+                    "Species": "N/A",
+                },
+                ancestral="Error occurred during retrieval",
+                specific="Error occurred during retrieval",
+                commentary="Error occurred during retrieval",
+                bio_knowledge="Error occurred during retrieval",
+            )
