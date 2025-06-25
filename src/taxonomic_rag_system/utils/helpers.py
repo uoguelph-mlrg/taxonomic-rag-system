@@ -107,7 +107,29 @@ def format_docs(docs: List[Document]) -> str:
     :param docs: Retrieved document chunks
     :return: Single string containing all fetched document chunks
     """
-    return "\n\n".join(f"{str(doc.metadata)}\n{doc.page_content}" for doc in docs)
+    formatted_docs = []
+    for doc in docs:
+        try:
+            # 确保 metadata 被正确转换为字符串
+            if hasattr(doc, 'metadata') and doc.metadata:
+                # 尝试多种方式来安全地转换 metadata
+                if isinstance(doc.metadata, dict):
+                    metadata_str = str(doc.metadata)
+                else:
+                    metadata_str = str(doc.metadata)
+            else:
+                metadata_str = "{}"
+            
+            # 确保 page_content 是字符串
+            page_content = str(doc.page_content) if hasattr(doc, 'page_content') else ""
+            
+            formatted_docs.append(f"{metadata_str}\n{page_content}")
+        except Exception as e:
+            # 如果出现任何错误，使用更安全的格式
+            print(f"Error formatting document: {e}")
+            formatted_docs.append(f"Source: Unknown\n{getattr(doc, 'page_content', 'No content')}")
+    
+    return "\n\n".join(formatted_docs)
 
 
 def unique_docs(docs: List[List[Document]]) -> List[Document]:
@@ -117,10 +139,38 @@ def unique_docs(docs: List[List[Document]]) -> List[Document]:
     :param docs: All retrieved document chunks (from several retrievals) with duplicates
     :return: Unique document chunks
     """
-    # Flatten list of lists and convert each to string
-    flattened_docs = [dumps(doc) for sublist in docs for doc in sublist]
-    unique_chunks = list(set(flattened_docs))  # Keep only unique chunks
-    return [loads(doc) for doc in unique_chunks]
+    try:
+        # Flatten list of lists and convert each to string
+        flattened_docs = []
+        for sublist in docs:
+            for doc in sublist:
+                try:
+                    flattened_docs.append(dumps(doc))
+                except Exception as e:
+                    print(f"Error serializing document: {e}")
+                    # 创建一个简化的文档表示
+                    simple_doc = f"metadata:{getattr(doc, 'metadata', {})};content:{getattr(doc, 'page_content', '')}"
+                    flattened_docs.append(simple_doc)
+        
+        unique_chunks = list(set(flattened_docs))  # Keep only unique chunks
+        
+        # 尝试加载回Document对象
+        result_docs = []
+        for doc_str in unique_chunks:
+            try:
+                result_docs.append(loads(doc_str))
+            except Exception as e:
+                print(f"Error deserializing document: {e}")
+                # 如果反序列化失败，创建一个简单的Document对象
+                from langchain_core.documents import Document
+                result_docs.append(Document(page_content=str(doc_str), metadata={}))
+        
+        return result_docs
+    except Exception as e:
+        print(f"Error in unique_docs: {e}")
+        # 如果所有都失败了，返回原始的扁平化列表
+        flattened = [doc for sublist in docs for doc in sublist]
+        return flattened
 
 
 def simple_string_output(out_dict: Dict[str, Union[str, Dict[str, str]]]) -> str:

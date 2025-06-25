@@ -159,8 +159,17 @@ class RAGChainBuilder:
 
         :return: The constructed RAG chain.
         """
+        # 创建一个安全的格式化函数来确保所有内容都是字符串
+        def safe_format_docs(docs: list[Document]) -> str:
+            try:
+                return format_docs(docs)
+            except Exception as e:
+                print(f"Error in format_docs: {e}")
+                # 使用更安全的格式化方法
+                return "\n\n".join(f"Source: {str(doc.metadata.get('source', 'Unknown'))}\n{doc.page_content}" for doc in docs)
+        
         return (
-            {"context": retriever | format_docs, "caption": RunnablePassthrough()}
+            {"context": retriever | safe_format_docs, "caption": RunnablePassthrough()}
             | self.prompt
             | self.llm
             | self.output_parser
