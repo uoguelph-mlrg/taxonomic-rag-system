@@ -218,7 +218,7 @@ class ImageRAGModel:
             if context:
                 docs = await self.rag_model.aretrieve(caption=caption)
                 cntxt = "\n\n".join(
-                    [f"{d.metadata}\n{d.page_content}" for d in docs]
+                    [f"{str(d.metadata)}\n{d.page_content}" for d in docs]
                 )  # Convert to string
         except Exception as er:
             print(f"{er} occurred")

@@ -138,6 +138,7 @@ def simple_string_output(out_dict: Dict[str, Union[str, Dict[str, str]]]) -> str
     -------
         str: A formatted string containing the model's structured outputs.
     """
+    # Convert guess_class dict to string if it's a dictionary
     guess_class_str = out_dict["guess_class"]
     if isinstance(guess_class_str, dict):
         guess_class_str = "\n".join([f"{k}: {v}" for k, v in guess_class_str.items()])
