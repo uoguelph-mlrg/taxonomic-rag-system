@@ -107,7 +107,7 @@ def format_docs(docs: List[Document]) -> str:
     :param docs: Retrieved document chunks
     :return: Single string containing all fetched document chunks
     """
-    return "\n\n".join(f"{doc.metadata.items()}\n{doc.page_content}" for doc in docs)
+    return "\n\n".join(f"{str(doc.metadata)}\n{doc.page_content}" for doc in docs)
 
 
 def unique_docs(docs: List[List[Document]]) -> List[Document]:
@@ -138,14 +138,10 @@ def simple_string_output(out_dict: Dict[str, Union[str, Dict[str, str]]]) -> str
     -------
         str: A formatted string containing the model's structured outputs.
     """
-    # Convert guess_class dict to string if it's a dictionary
-    guess_class_str = out_dict["guess_class"]
-    if isinstance(guess_class_str, dict):
-        guess_class_str = "\n".join([f"{k}: {v}" for k, v in guess_class_str.items()])
     
     return f"""
 Taxonomic Classification:
-{guess_class_str}
+{out_dict["guess_class"]}
 Ancestral features:
 {out_dict["ancestral"]}
 Organismal features:
