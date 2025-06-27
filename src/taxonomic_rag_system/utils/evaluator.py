@@ -141,7 +141,7 @@ def process_row(row: Dict[str, Any]) -> Dict[str, Any]:
     Args:
         row (dict): A dictionary representing a single row of the dataset. It must
             contain the following keys:
-            - "image": An image object.
+            - "file_name": An image object.
             - "rarespecies_id": The unique identifier for the rare species.
             - "kingdom": The taxonomic kingdom of the species.
             - "phylum": The taxonomic phylum of the species.
@@ -162,11 +162,11 @@ def process_row(row: Dict[str, Any]) -> Dict[str, Any]:
     """
     try:
         # Check if the image object has the 'getexif' attribute without loading it
-        if not hasattr(row["image"], "getexif"):
+        if not hasattr(row["file_name"], "getexif"):
             raise AttributeError
 
         return {
-            "image": row["image"],
+            "image": row["file_name"],
             "class_dict": {
                 "RSID": row["rarespecies_id"],
                 "Kingdom": row["kingdom"],
