@@ -221,7 +221,35 @@ class RAGChainBuilder:
         :param inp: The input data.
         :return: The output of the RAG chain.
         """
-        return await self.rag_chain.ainvoke(input=inp)
+        try:
+            print(f"RAGChainBuilder.ainvoke called with input keys: {list(inp.keys())}")
+            result = await self.rag_chain.ainvoke(input=inp)
+            print(f"RAGChainBuilder.ainvoke completed successfully")
+            return result
+        except Exception as e:
+            import traceback
+            print(f"Error in RAGChainBuilder.ainvoke:")
+            print(f"Error type: {type(e).__name__}")
+            print(f"Error message: {str(e)}")
+            print(f"Full traceback:")
+            traceback.print_exc()
+            # Return a default result instead of letting the error propagate
+            return TaxBiodiversity(
+                classification={
+                    "Kingdom": "Animalia",
+                    "Phylum": "N/A",
+                    "Class": "N/A",
+                    "Order": "N/A",
+                    "Family": "N/A",
+                    "Genus": "N/A",
+                    "Species": "N/A",
+                },
+                ancestral="Error occurred during processing",
+                specific="Error occurred during processing",
+                commentary="Error occurred during processing",
+                bio_knowledge="Error occurred during processing",
+            )
+        # return await self.rag_chain.ainvoke(input=inp)
 
 
 class BaseRetriever:
