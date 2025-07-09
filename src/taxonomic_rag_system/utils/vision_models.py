@@ -54,6 +54,8 @@ def load_api_keys() -> None:
         os.environ["OPENAI_API_KEY"] = f.read().strip()
     with open(Path.home() / ".openrouter.key", "r") as f:
         os.environ["OPENROUTER_API_KEY"] = f.read().strip()
+    with open(Path.home() / ".kscope.key", "r") as f:
+        os.environ["KSCOPE_API_KEY"] = f.read().strip()
 
 
 class VLM:
