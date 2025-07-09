@@ -336,3 +336,174 @@ class DescriptiveCaptioner(InstructorVLModel):
         )
         assert isinstance(raw_resp, Caption)
         return raw_resp.caption
+
+
+class KScopeVLModel(VLM):
+    """
+    A base class for vision-language models with KScope.
+
+    Attributes
+    ----------
+        cap: The AI client instance for interaction.
+        model: The model name to be used for caption generation.
+        temp: The temperature setting for generation randomness.
+    """
+
+    def __init__(
+        self,
+        cap: Any = None,
+        model: str = "Llama-3.2-11B-Vision-Instruct",
+        temp: float = 0,
+    ) -> None:
+        if cap is None:
+            cap = AsyncOpenAI(
+                base_url="https://kscope.vectorinstitute.ai/v1",
+                api_key=os.environ["KSCOPE_API_KEY"],
+            )
+        super().__init__(cap, model, temp)
+
+
+class KScopeTaxClassifierVLM(KScopeVLModel):
+    """A KScope VLM model for taxonomic classification of organisms from images."""
+
+    def __init__(
+        self,
+        cap: Any = None,
+        model: str = "Llama-3.2-11B-Vision-Instruct",
+        temp: float = 0,
+    ) -> None:
+        super().__init__(cap, model, temp)
+        self.system_prompt = (
+            """
+            You are an expert AI vision assistant to a taxonomist. Examine the image, analyze the primary organism's features, and provide a taxonomic classification.
+
+            **Response Format:**
+            - Respond **ONLY** with a JSON object containing a `classification` key.
+            - The value of `classification` must be a dictionary with keys:
+            ['Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'].
+            - Use scientific names or if uncertain, use 'N/A'.
+
+            Example:
+            {
+            "classification": {
+                "Kingdom": "Animalia",
+                "Phylum": "Arthropoda",
+                "Class": "Insecta",
+                "Order": "N/A",
+                "Family": "N/A",
+                "Genus": "N/A",
+                "Species": "N/A"
+            }
+            }
+            """
+            + "..." * 256
+        )
+
+    async def generate_classification(self, image_b64):
+        """
+        Process image with VLM for taxonomic classification.
+
+        Args:
+            image_b64: Base64 encoded image data.
+
+        Returns
+        -------
+            A dict[str,str] containing the predicted taxonomic classifications
+            where key, value pairs are taxonomic rank, name pairs.
+        """
+        raw_resp = await self.cap.chat.completions.create(
+            model=self.model,
+            temperature=self.temp,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": self.system_prompt
+                            + "Provide a taxonomic classification for the primary organism visible in the following image.",
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_b64}",
+                                "detail": "high",
+                            },
+                        },
+                    ],
+                },
+            ],
+            response_format={"type": "json_object"},
+        )
+
+        # Log the raw response for inspection
+        logging.debug(f"Raw response: {raw_resp}")
+
+        # Extract the JSON string
+        json_content = raw_resp.choices[0].message.content
+
+        # Parse the JSON string to a Python dictionary
+        parsed_data = json.loads(json_content)
+
+        # Manually parse the response to a Tax object
+        tax = Tax.model_validate(parsed_data)
+        assert isinstance(tax, Tax)
+        return tax.classification
+
+
+class KScopeUQModel(KScopeVLModel):
+    """A KScope Model for uncertainty quantification of LLM output."""
+
+    def __init__(
+        self,
+        cap: Any = None,
+        model: str = "Meta-Llama-3.1-8B-Instruct",  # TODO: NEED TO FIND A GOOD MODEL HERE TO START WITH
+        temp: float = 0,
+        vocab_size=128256,  # Adjust vocab size as needed according to model
+    ) -> None:
+        super().__init__(cap, model, temp)
+        self.vocab_size = vocab_size
+        self.system_prompt = (
+            """
+            You are an AI assistant that quantifies uncertainty in LLM outputs.
+
+            The LLM output you will examine contains a taxonomic classification as well as commentary on the confidence of the classification.
+
+            Your task is to identify language that indicates certainty, uncertainty, confidence or any other indication of that would assist in prediction-level uncertainty quantification.
+            """
+            + "..." * 256
+        )
+
+    async def generate_logprobs(self, llm_output: str):
+        """
+        Process LLM output with KScope UQ logprobs adapter.
+
+        Args:
+            llm_output: str -  Model output containing classification + commentary.
+
+        Returns
+        -------
+            An array of log probabilities from the Tool LLM.
+        """
+        raw_resp = await self.cap.chat.completions.create(
+            model=self.model,
+            temperature=self.temp,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": self.system_prompt},
+                        {
+                            "type": "text",
+                            "text": f"""{llm_output}""",
+                        },
+                    ],
+                },
+            ],
+            response_format={"type": "json_object"},
+            max_tokens=1,
+            logprobs=self.vocab_size,
+        )
+
+        # Return a numpy array of log probabilities
+        return raw_resp.choices[0].logprobs
