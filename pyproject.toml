@@ -1,3 +1,23 @@
+[project]
+name = "taxonomic-rag-system"
+version = "0.1.1"
+description = "A taxonomic system using image captioining and RAG"
+readme = "README.md"
+authors = [ {name = "Nathaniel Lesperance", email = "lesperan@uoguelph.ca"}, {name = "Shuting Xie", email = "shuting.xie@utoronto.ca"}, {name = "Graham W. Taylor", email = "gwtaylor@uoguelph.ca"}]
+license = "Apache-2.0"
+repository = "https://github.com/uoguelph-mlrg/taxonomic-rag-system"
+requires-python = ">=3.12"
+dependencies = [
+    "backoff>=2.2.1",
+    "chromadb>=1.0.12",
+    "instructor>=1.7.9",
+    "pillow>=11.2.1",
+    "pydantic>=2.11.3",
+    "ragas>=0.2.15",
+    "scikit-learn>=1.6.1",
+    "sentence-transformers>=4.1.0",
+]
+
 [project.optional-dependencies]
 # CPU version: use to local development or CI
 cpu = [
@@ -42,26 +62,6 @@ conflicts = [
     { extra = "cpu" },
     { extra = "gpu" },
   ],
-]
-
-[project]
-name = "taxonomic-rag-system"
-version = "0.1.0"
-description = "A taxonomic system using image captioining and RAG"
-readme = "README.md"
-authors = [ {name = "Nate Lesperance", email = "lesperan@uoguelph.ca"}]
-license = "Apache-2.0"
-repository = "https://github.com/uoguelph-mlrg/taxonomic-rag-system"
-requires-python = ">=3.12"
-dependencies = [
-    "backoff>=2.2.1",
-    "chromadb>=1.0.12",
-    "instructor>=1.7.9",
-    "pillow>=11.2.1",
-    "pydantic>=2.11.3",
-    "ragas>=0.2.15",
-    "scikit-learn>=1.6.1",
-    "sentence-transformers>=4.1.0",
 ]
 
 [build-system]
