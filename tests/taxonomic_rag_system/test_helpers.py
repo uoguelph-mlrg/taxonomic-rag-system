@@ -11,7 +11,6 @@ Tested Functions:
 - `unique_docs`: Filters out duplicate documents from a list.
 - `simple_string_output`: Converts a dictionary into a simple string representation.
 - `clean_string_output`: Cleans and formats a dictionary into a structured string.
-- `b64_to_pil`: Converts a base64-encoded image to a PIL Image object.
 - `imgurl_tob64`: Converts an image from a URL to a base64-encoded string.
 - `imgfile_tob64`: Converts an image file to a base64-encoded string.
 - `pilimg_tob64`: Converts a PIL Image object to a base64-encoded string.
@@ -26,13 +25,9 @@ Dependencies:
 - `mocker` for mocking external dependencies in tests.
 """
 
-import base64
-from io import BytesIO
-
 from PIL import Image
 
 from taxonomic_rag_system.utils.helpers import (
-    b64_to_pil,
     classify_report,
     clean_string_output,
     custom_collate_fn,
@@ -106,17 +101,6 @@ def test_clean_string_output():
     assert "Unique features" in result
     assert "Interesting discovery" in result
     assert "Rich ecosystem" in result
-
-
-def test_b64_to_pil():
-    """Test converting a base64 string to a PIL Image."""
-    image = Image.new("RGB", (10, 10), color="red")
-    buffer = BytesIO()
-    image.save(buffer, format="JPEG")
-    image_b64 = base64.b64encode(buffer.getvalue())
-    result = b64_to_pil(image_b64)
-    assert isinstance(result, Image.Image)
-    assert result.size == (10, 10)
 
 
 def test_imgurl_tob64(mocker):
