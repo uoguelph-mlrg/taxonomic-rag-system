@@ -1,10 +1,6 @@
 """
 Helper functions for the taxonomic RAG system.
 
-Together, these functions streamline the workflow for
-taxonomic classification tasks, enabling efficient data processing, evaluation,
-and reporting in the taxonomic RAG system.
-
 This module provides a comprehensive set of utility functions to facilitate
 various tasks in the taxonomic RAG system. These include document formatting
 for LLM prompts, image processing for handling base64 and PIL image conversions,
@@ -13,10 +9,12 @@ Additionally, the module supports classification evaluation by computing metrics
 such as accuracy and F1 scores, comparing true to predicted classifications,
 and generating classification reports of taxonomic predictions.
 
-Also includes data handling utilities for processing batches of
-data, RAG evaluation for assessing response quality using faithfulness and
-relevancy metrics, and file writing utilities for exporting metrics and
-predictions to CSV files.
+The module also includes utilities for hierarchical metrics, RAG evaluation
+for assessing response quality using faithfulness and relevancy metrics,
+and file writing utilities for exporting metrics and predictions to CSV files.
+It supports advanced evaluation pipelines, including hierarchical precision,
+recall, and F1-score calculations, and provides custom collate functions for
+batch processing.
 
 Dependencies:
     - base64
@@ -49,14 +47,14 @@ Functions:
     - extract_tax_metrics: Extract classification metrics from a result object.
     - extract_tax_metrics_rs: Extract metrics and enrich guess class dictionaries.
     - write_preds_to_csv: Write prediction data to a CSV file.
+    - write_any_preds_to_csv: Write prediction data to a CSV file with ID handling.
+    - hierarchical_metrics: Hierarchical precision (hp), recall (hr), and F1 (hf).
 """
 
 import base64
 import csv
-import os
 import sys
 from io import BytesIO
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -74,41 +72,7 @@ from sklearn.metrics import accuracy_score, f1_score
 from sklearn.preprocessing import LabelEncoder
 
 
-def load_api_keys() -> None:
-    """Load API keys from files.
-
-    OpenAI API key is required, OpenRouter and Cohere API keys are optional.
-    Read API keys from files in home dir - `~/.openai.key`,
-    `~/.openrouter.key` and `~/.cohere.key`.
-    """
-    try:
-        with open(Path.home() / ".openai.key", "r") as f:
-            os.environ["OPENAI_API_KEY"] = f.read().strip()
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            "Could not find OpenAI API key at ~/.openai.key. "
-            "This key is required for the model to function."
-        ) from None
-
-    try:
-        with open(Path.home() / ".openrouter.key", "r") as f:
-            os.environ["OPENROUTER_API_KEY"] = f.read().strip()
-    except FileNotFoundError:
-        # OpenRouter key is optional, only log a warning
-        print(
-            "Warning: Could not find OpenRouter API key at ~/.openrouter.key. "
-            "This is fine if you're not using OpenRouter models."
-        )
-
-    try:
-        with open(Path.home() / ".cohere.key", "r") as f:
-            os.environ["COHERE_API_KEY"] = f.read().strip()
-    except FileNotFoundError:
-        # Cohere key is optional, only log a warning
-        print(
-            "Warning: Could not find Cohere API key at ~/.cohere.key. "
-            "This is fine if you're not using reranking functionality."
-        )
+RANKS = ["Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"]
 
 
 def format_context(docs: List[Document]) -> str:
@@ -260,32 +224,6 @@ Biodiversity Knowledge:
     return output
 
 
-def b64_to_pil(image_b64: str) -> Image.Image:
-    """
-    Convert a base64-encoded image to a PIL Image object.
-
-    Args:
-        image_b64 (bytes): The base64-encoded image data.
-
-    Returns
-    -------
-        PIL.Image.Image: The decoded image as a PIL Image object.
-
-    Raises
-    ------
-        SystemExit: If the image cannot be decoded or opened, the program exits
-        with an error message.
-    """
-    try:
-        im_file = BytesIO(image_b64.encode("utf-8"))  # Convert string to bytes
-        image = Image.open(im_file)  # to PIL Image object
-    except Exception as e:
-        print(e)
-        print("Unable to query with this image")
-        sys.exit(1)
-    return image
-
-
 def imgurl_tob64(image_url: str) -> str:
     """
     Convert an image from a given URL to a Base64-encoded string.
@@ -387,7 +325,7 @@ def get_metrics(
     # Calculate metrics
     accuracy = accuracy_score(y_true_encoded, y_pred_encoded)
     f1 = f1_score(y_true_encoded, y_pred_encoded, average="weighted")
-
+    count = len(y_preds)  # Number of predictions made
     if verbose:  # Report metrics with tax rank to screen
         count = len(y_preds)
         print(f"Rank: {level} ({count})")
@@ -457,20 +395,21 @@ def classify_report(
         - The `dict_match` and `get_metrics` helper functions used to calculate
           the num correct predictions and the classification metrics, respectively.
     """
-    ranks = ["Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"]
     out_dict = {}
-    for rank in ranks:  # Go through each rank and build classification metrics dict
+    for rank in RANKS:  # Go through each rank and build classification metrics dict
         true_names = [
             true_dict[rank]
             for true_dict, pred_dict in zip(true_dicts, pred_dicts)
             if rank in pred_dict
         ]
         pred_names = [pred_dict[rank] for pred_dict in pred_dicts if rank in pred_dict]
-        out_dict[rank] = {"Count": float(len(pred_names))}
+        out_dict[rank] = {"count": float(len(pred_names))}
         metrics = get_metrics(true_names, pred_names, rank, verbose=verbose)
         # Convert integer values in metrics to floats
         metrics = {k: float(v) if isinstance(v, int) else v for k, v in metrics.items()}
         out_dict[rank].update(metrics)
+    hierarch_metrics = hierarchical_metrics(true_dicts, pred_dicts, verbose=verbose)
+    out_dict.update(hierarch_metrics)
     return out_dict
 
 
@@ -505,8 +444,9 @@ async def rag_evaluate(
     """
     Evaluate the quality of a response in a Retrieval-Augmented Generation (RAG) system.
 
-    This function takes an output dict and embeddings, formats it and computes
-    RAGAS scores for faithfulness and response relevancy using an LLM and embeddings.
+    This function takes an output dictionary and embeddings, formats the input,
+    and computes RAGAS scores for faithfulness and response relevancy using an LLM
+    and embeddings.
 
     Args:
         eval_dict (dict): A dictionary containing the evaluation data. It must include:
@@ -516,11 +456,13 @@ async def rag_evaluate(
 
     Returns
     -------
-        pandas.DataFrame: A DataFrame of faithfulness and response relevancy scores.
+        pandas.DataFrame: A DataFrame of faithfulness and response relevancy scores,
+                          or None if `eval_dict` is None.
 
     Notes
     -----
-        - The function uses an LLM evaluator of response's faithfulness and relevancy.
+        - The function modifies `eval_dict` by adding a "response" key using the
+          `clean_string_output` function.
         - The evaluation pipeline formats the input, creates a sample, and scores it.
         - The returned DataFrame contains the computed scores for each metric.
     """
@@ -576,7 +518,8 @@ def write_overall_metrics(csv_filename: str, data: Dict[str, Dict[str, float]]) 
     This function takes a dictionary of metrics and writes them to a CSV file.
     The CSV file will include a header row with "Rank", "Accuracy", and "F1".
     For each rank in the data, it writes the corresponding accuracy and F1 score
-    if available, or just the rank and a single metric if the data is not a dictionary.
+    if available. Additionally, it handles taxonomic-wise metrics and overall
+    metrics (like hr, hp, hf) separately, adding empty rows for readability.
 
     Args:
         csv_filename (str): The path to the CSV file where the metrics will be written.
@@ -588,20 +531,44 @@ def write_overall_metrics(csv_filename: str, data: Dict[str, Dict[str, float]]) 
     Raises
     ------
         IOError: If there is an issue writing to the file.
+
+    Notes
+    -----
+        - Taxonomic-wise metrics (not accuracy or F1) are written separately.
+        - Overall metrics (not specific to taxonomic ranks) are written at the end.
+        - Empty rows are added for better readability in the CSV file.
     """
     with open(csv_filename, mode="w", newline="") as file:
         writer = csv.writer(file)
         # Write the header
-        writer.writerow(["Rank", "Accuracy", "F1"])
-
+        writer.writerow(["Rank", "Accuracy", "F1", "Attempts"])
+        tax_wises = []  # For taxonomic-wise metrics that aren't accuracy and f1
+        overall_metrics = []
         # Write each rank's metrics
         for rank, metrics in data.items():
-            if isinstance(metrics, dict):  # For ranks with 'accuracy' and 'f1'
+            if isinstance(metrics, dict):  # For ranks with 'accuracy', 'f1' and 'count'
                 writer.writerow(
-                    [rank, metrics.get("accuracy", ""), metrics.get("f1", "")]
+                    [
+                        rank,
+                        metrics.get("accuracy", ""),
+                        metrics.get("f1", ""),
+                        metrics.get("count", ""),
+                    ]
                 )
-            else:  # For PropRanksCorrect and Ranks
-                writer.writerow([rank, metrics, ""])
+            elif rank in RANKS:  # For other taxonomic-wise metrics
+                tax_wises.append([rank, metrics, ""])
+            # Other metrics not individualized to taxonomic ranks
+            # note: `rank` here is metric name str, `metrics` is the float/int value
+            else:
+                overall_metrics.append(rank, metrics, "")
+        writer.writerow([])  # Empty row for readability
+        for row in tax_wises:
+            writer.writerow(row)
+        writer.writerow([])  # Empty row for readability
+        # Write overall metrics header
+        writer.writerow(["Overall Metrics", "", "", ""])
+        for row in overall_metrics:
+            writer.writerow(row)
 
 
 def extract_tax_metrics(
@@ -642,6 +609,7 @@ def extract_tax_metrics_rs(
     Args:
         result_obj (list of dict): A list of dictionaries where each dictionary contains
             the keys "true_class", "guess_class", and "RSID".
+        verbose (bool, optional): If True, prints detailed metrics to stdout.
 
     Returns
     -------
@@ -679,33 +647,138 @@ def write_preds_to_csv(guess_classes: List[Dict[str, str]], csv_filename: str) -
     ------
         IOError: If there is an issue opening or writing to the file.
     """
-    # Write guess_classes along with image paths to a new CSV
+    write_any_preds_to_csv(
+        guess_classes=guess_classes,
+        csv_filename=csv_filename,
+        id_name="RSID",
+    )
+
+
+def write_any_preds_to_csv(
+    guess_classes: List[Dict[str, str]], csv_filename: str, id_name: Optional[str]
+) -> None:
+    """
+    Write prediction data to a CSV file.
+
+    This function appends prediction data, represented as a list of dictionaries,
+    to a specified CSV file. If the file is new or empty, it writes a header row
+    before appending the data.
+
+    Args:
+        guess_classes (list of dict): A list of dictionaries where each dictionary
+            contains prediction data with keys "Kingdom", "Phylum",
+            "Class", "Order", "Family", "Genus", and "Species". If IDs are present,
+            will also use the key from `id_name` as the first column.
+        csv_filename (str): The path to the CSV file where the data will be written.
+        id_name (Optional[str]): If provided, ID column name will be added to the CSV.
+
+    Raises
+    ------
+        IOError: If there is an issue opening or writing to the file.
+
+    Notes
+    -----
+        - The header row is written only if the file is empty.
+        - The `RANKS` list is dynamically modified to include `id_name` if provided.
+    """
+    cols = RANKS.copy()
+    if id_name:
+        cols.insert(0, id_name)
+
+    # Write predicted classification to a new CSV
     with open(csv_filename, mode="a", newline="") as file:
         writer = csv.writer(file)
         # Write header for guess classes if the file is new
         if file.tell() == 0:
-            writer.writerow(
-                [
-                    "RSID",
-                    "Kingdom",
-                    "Phylum",
-                    "Class",
-                    "Order",
-                    "Family",
-                    "Genus",
-                    "Species",
-                ]
-            )
-
+            writer.writerow([cols])
         for guess in guess_classes:
-            row = [
-                guess.get("RSID", ""),
-                guess.get("Kingdom", ""),
-                guess.get("Phylum", ""),
-                guess.get("Class", ""),
-                guess.get("Order", ""),
-                guess.get("Family", ""),
-                guess.get("Genus", ""),
-                guess.get("Species", ""),
-            ]
+            row = [guess.get(col, "") for col in cols]
             writer.writerow(row)
+
+
+def hierarchical_metrics(
+    true_dicts: List[Dict[str, str]],
+    pred_dicts: List[Dict[str, str]],
+    verbose: bool = True,
+) -> Dict[str, float]:
+    """
+    Calculate hierarchical metrics for taxonomic predictions.
+
+    Compares true taxonomic classifications with predicted classifications and
+    calculates the prediction set's hierarchical precision (hP), hierarchical
+    recall (hR), and hierarchical F1 (hF).
+
+    Keys in each dict should be the standard Linnaean ranks from Phylum and below,
+    (e.g. "Phylum", "Class", ..., "Species"), but is case-insensitive.
+
+    Args:
+        true_dicts: list[dict[str,str]] mapping rank -> true taxon name.
+        pred_dicts: list[dict[str,str]] mapping rank -> predicted taxon name.
+        verbose (bool, optional): If True, prints these metrics to stdout.
+
+    Returns
+    -------
+        dict[str, float] with keys:
+            - "hp": hierarchical precision
+            - "hr": hierarchical recall
+            - "hf": hierarchical F1
+    """
+    # Normalize
+    ranks = [rank.lower() for rank in RANKS]
+    true_dicts = [
+        {rank.lower(): val for rank, val in true_dict.items()}
+        for true_dict in true_dicts
+    ]
+    pred_dicts = [
+        {rank.lower(): val for rank, val in pred_dict.items()}
+        for pred_dict in pred_dicts
+    ]
+
+    n = len(true_dicts)
+    hp_sum = 0.0
+    hr_sum = 0.0
+
+    for true_dict, pred_dict in zip(true_dicts, pred_dicts):
+        # Build the ancestor paths for true and predicted in a single loop
+        anc_true = []
+        anc_pred = []
+
+        for rank in ranks:
+            true_taxa = true_dict.get(rank, "")
+            pred_taxa = pred_dict.get(rank, "")
+            # Check and append to anc_true
+            if true_taxa.strip():
+                anc_true.append(true_taxa.lower())
+            else:
+                # Stop adding to anc_true if a rank is missing
+                break
+            # Check and append to anc_pred
+            if pred_taxa.strip():
+                anc_pred.append(pred_taxa.lower())
+            else:
+                # Stop adding to anc_pred if a rank is missing
+                break
+
+        set_true = set(anc_true)
+        set_pred = set(anc_pred)
+        inter_size = len(set_true & set_pred)
+
+        # Precision: |intersection| / |predicted path|
+        hp_i = inter_size / len(set_pred) if set_pred else 0.000
+        # Recall: |intersection| / |true path|
+        hr_i = inter_size / len(set_true) if set_true else 0.000
+
+        hp_sum += hp_i
+        hr_sum += hr_i
+
+    # Sum over all examples
+    hp = round(hp_sum / n, 3)
+    hr = round(hr_sum / n, 3)
+    hf = round((2 * hp * hr / (hp + hr)), 3) if (hp + hr) > 0 else 0.000
+
+    if verbose:
+        print(f"Hierarchical Precision (hp): {hp}")
+        print(f"Hierarchical Recall (hr): {hr}")
+        print(f"Hierarchical F1 (hf): {hf}")
+
+    return {"hp": hp, "hr": hr, "hf": hf}
