@@ -39,7 +39,6 @@ Usage:
 import argparse
 import asyncio
 import datetime
-import os
 from pathlib import Path
 
 from taxonomic_rag_system.core.image_rag import ImageRAGModel
@@ -104,9 +103,6 @@ async def main() -> None:
     write = args.write
     output_path = args.output
 
-    with open(Path.home() / ".cohere.key", "r") as f:
-        os.environ["COHERE_API_KEY"] = f.read().strip()
-
     # 1. Build Model
     model = ImageRAGModel(
         vstore_path=vstore_path,
@@ -123,6 +119,10 @@ async def main() -> None:
     overalls, preds = extract_tax_metrics_rs(rarespp_predictions, verbose=True)
 
     if write:
+        # Create output directory if it doesn't exist
+        if output_path:
+            Path(output_path).mkdir(parents=True, exist_ok=True)
+
         current_date = datetime.datetime.now().strftime("%Y-%m-%d")  # Grab current date
         current_time = datetime.datetime.now().strftime("%H-%M-%S")  # Grab current time
         final_metrics_csv_name = str(

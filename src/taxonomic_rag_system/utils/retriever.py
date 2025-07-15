@@ -23,9 +23,7 @@ Dependencies:
     - taxonomic_rag_system.utils.helpers
 """
 
-import os
 import logging
-from pathlib import Path
 from typing import Any
 
 import torch
@@ -41,65 +39,26 @@ from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_openai import ChatOpenAI
 
 # Local imports
-from taxonomic_rag_system.utils.helpers import format_docs, unique_docs
+from taxonomic_rag_system.utils.helpers import format_docs, load_api_keys, unique_docs
 from taxonomic_rag_system.utils.out_models import MultiQuery, TaxBiodiversity
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def load_api_keys() -> None:
-    """Load API keys from files."""
-    # Original code, change back later
-    # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
-    # with open(Path.home() / ".openai.key", "r") as f:
-    #     os.environ["OPENAI_API_KEY"] = f.read().strip()
-    # with open(Path.home() / ".openrouter.key", "r") as f:
-    #     os.environ["OPENROUTER_API_KEY"] = f.read().strip()
-    # with open(Path.home() / ".cohere.key", "r") as f:
-    #     os.environ["COHERE_API_KEY"] = f.read().strip()
-
-    # OpenAI API key is required
-    try:
-        with open(Path.home() / ".openai.key", "r") as f:
-            os.environ["OPENAI_API_KEY"] = f.read().strip()
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            "Could not find OpenAI API key at ~/.openai.key. "
-            "This key is required for the model to function."
-        )
-
-    # OpenRouter API key is optional
-    try:
-        with open(Path.home() / ".openrouter.key", "r") as f:
-            os.environ["OPENROUTER_API_KEY"] = f.read().strip()
-    except FileNotFoundError:
-        # OpenRouter key is optional, only log a warning
-        print("Warning: Could not find OpenRouter API key at ~/.openrouter.key. "
-              "This is fine if you're not using OpenRouter models.")
-
-    # Cohere API key is optional
-    try:
-        with open(Path.home() / ".cohere.key", "r") as f:
-            os.environ["COHERE_API_KEY"] = f.read().strip()
-    except FileNotFoundError:
-        # Cohere key is optional, only log a warning
-        print("Warning: Could not find Cohere API key at ~/.cohere.key. "
-              "This is fine if you're not using reranking functionality.")
-
-
 class SafeHuggingFaceEmbeddings:
     """
     A safe wrapper around HuggingFaceEmbeddings that ensures all inputs are strings.
-    
+
     This prevents 'dict' object has no attribute 'replace' errors by converting
     any non-string inputs to strings before passing them to the underlying embeddings.
     """
-    
+
     def __init__(self, **kwargs):
         self.embeddings = HuggingFaceEmbeddings(**kwargs)
-    
+
     def embed_documents(self, texts):
         """Safely embed documents by ensuring all inputs are strings."""
         safe_texts = []
@@ -111,7 +70,7 @@ class SafeHuggingFaceEmbeddings:
             else:
                 safe_texts.append(str(text))
         return self.embeddings.embed_documents(safe_texts)
-    
+
     def embed_query(self, text):
         """Safely embed a query by ensuring the input is a string."""
         if isinstance(text, str):
@@ -121,7 +80,7 @@ class SafeHuggingFaceEmbeddings:
         else:
             safe_text = str(text)
         return self.embeddings.embed_query(safe_text)
-    
+
     def __getattr__(self, name):
         """Delegate all other attributes to the underlying embeddings."""
         return getattr(self.embeddings, name)
@@ -203,7 +162,6 @@ class RAGChainBuilder:
             | self.llm
             | self.output_parser
         )
-    
 
     def invoke(self, inp: dict[str, Any]) -> TaxBiodiversity:
         """
@@ -224,14 +182,15 @@ class RAGChainBuilder:
         try:
             print(f"RAGChainBuilder.ainvoke called with input keys: {list(inp.keys())}")
             result = await self.rag_chain.ainvoke(input=inp)
-            print(f"RAGChainBuilder.ainvoke completed successfully")
+            print("RAGChainBuilder.ainvoke completed successfully")
             return result
         except Exception as e:
             import traceback
-            print(f"Error in RAGChainBuilder.ainvoke:")
+
+            print("Error in RAGChainBuilder.ainvoke:")
             print(f"Error type: {type(e).__name__}")
             print(f"Error message: {str(e)}")
-            print(f"Full traceback:")
+            print("Full traceback:")
             traceback.print_exc()
             # Return a default result instead of letting the error propagate
             return TaxBiodiversity(
@@ -352,13 +311,15 @@ class WikiStellaRAGModel(BaseRetriever):
             vectorstore = Chroma(
                 collection_name=self.collection_name,
                 persist_directory=vstore_path,
-                embedding_function=embeddings
+                embedding_function=embeddings,
             )
             logger.info(f"Successfully loaded vector store from {vstore_path}")
             return vectorstore
         except ValueError:
             # Collection does not exist – need to create new one (requires embeddings)
-            logger.info("Collection not found; creating new vector store with embeddings …")
+            logger.info(
+                "Collection not found; creating new vector store with embeddings …"
+            )
             return Chroma(
                 embedding_function=embeddings,
                 persist_directory=vstore_path,
@@ -407,7 +368,7 @@ class WikiStellaRAGModel(BaseRetriever):
             input_variables=["caption"],
             partial_variables={"format_instructions": parser.get_format_instructions()},
         )
-        
+
         generate_queries = (
             prompt_perspectives
             | ChatOpenAI(model="gpt-4o-mini")

@@ -33,11 +33,12 @@ detailed caption generation functionalities depending on the model used.
 import json
 import logging
 import os
-from pathlib import Path
 from typing import Any
 
 import instructor
 from openai import AsyncOpenAI
+
+from taxonomic_rag_system.utils.helpers import load_api_keys
 
 # Local imports
 from taxonomic_rag_system.utils.out_models import Caption, Tax
@@ -45,35 +46,6 @@ from taxonomic_rag_system.utils.out_models import Caption, Tax
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-
-
-def load_api_keys() -> None:
-    """Load API keys from files."""
-    # Original code, change back later
-    # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
-    # with open(Path.home() / ".openai.key", "r") as f:
-    #     os.environ["OPENAI_API_KEY"] = f.read().strip()
-    # with open(Path.home() / ".openrouter.key", "r") as f:
-    #     os.environ["OPENROUTER_API_KEY"] = f.read().strip()
-
-    # OpenAI API key is required
-    try:
-        with open(Path.home() / ".openai.key", "r") as f:
-            os.environ["OPENAI_API_KEY"] = f.read().strip()
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            "Could not find OpenAI API key at ~/.openai.key. "
-            "This key is required for the model to function."
-        )
-
-    # OpenRouter API key is optional
-    try:
-        with open(Path.home() / ".openrouter.key", "r") as f:
-            os.environ["OPENROUTER_API_KEY"] = f.read().strip()
-    except FileNotFoundError:
-        # OpenRouter key is optional, only log a warning
-        print("Warning: Could not find OpenRouter API key at ~/.openrouter.key. "
-              "This is fine if you're not using OpenRouter models.")
 
 
 class VLM:

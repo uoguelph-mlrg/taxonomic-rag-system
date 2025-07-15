@@ -26,6 +26,7 @@ Run this script to evaluate the Naive VLM on the rare species dataset and write 
 import argparse
 import asyncio
 import datetime
+from pathlib import Path
 
 from taxonomic_rag_system.core.image_rag import NaiveVLModel
 from taxonomic_rag_system.utils.helpers import (
@@ -89,6 +90,10 @@ async def main() -> None:
     overalls, preds = extract_tax_metrics(rarespp_predictions, verbose=True)
 
     if write:
+        # Create output directory if it doesn't exist
+        if output_path:
+            Path(output_path).mkdir(parents=True, exist_ok=True)
+
         current_date = datetime.datetime.now().strftime("%Y-%m-%d")  # Grab current date
         current_time = datetime.datetime.now().strftime("%H-%M-%S")  # Grab current time
         final_metrics_csv_name = str(

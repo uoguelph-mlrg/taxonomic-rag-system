@@ -40,8 +40,6 @@ event loop to execute its methods.
 
 import asyncio
 import gc
-import os
-from pathlib import Path
 from typing import Any, Optional, TypedDict, Union
 
 import torch
@@ -51,7 +49,7 @@ from openai import AsyncOpenAI
 from taxonomic_rag_system.utils.evaluator import (
     RareSpeciesEvaluator,
 )
-from taxonomic_rag_system.utils.helpers import simple_string_output
+from taxonomic_rag_system.utils.helpers import load_api_keys, simple_string_output
 from taxonomic_rag_system.utils.image_processor import ImageProcessor
 from taxonomic_rag_system.utils.out_models import TaxBiodiversity
 from taxonomic_rag_system.utils.retriever import WikiStellaRAGModel
@@ -65,36 +63,6 @@ class _QueryImageOutput(TypedDict):
     caption: str
     results: TaxBiodiversity
     context: str
-
-
-def load_api_keys() -> None:
-    """Load API keys from files."""
-    
-    # Original code, change back later
-    # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
-    # with open(Path.home() / ".openai.key", "r") as f:
-    #     os.environ["OPENAI_API_KEY"] = f.read().strip()
-    # with open(Path.home() / ".openrouter.key", "r") as f:
-    #     os.environ["OPENROUTER_API_KEY"] = f.read().strip()
-
-    # OpenAI API key is required
-    try:
-        with open(Path.home() / ".openai.key", "r") as f:
-            os.environ["OPENAI_API_KEY"] = f.read().strip()
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            "Could not find OpenAI API key at ~/.openai.key. "
-            "This key is required for the model to function."
-        )
-
-    # OpenRouter API key is optional
-    try:
-        with open(Path.home() / ".openrouter.key", "r") as f:
-            os.environ["OPENROUTER_API_KEY"] = f.read().strip()
-    except FileNotFoundError:
-        # OpenRouter key is optional, only log a warning
-        print("Warning: Could not find OpenRouter API key at ~/.openrouter.key. "
-              "This is fine if you're not using OpenRouter models.")
 
 
 class ImageRAGModel:
@@ -141,15 +109,15 @@ class ImageRAGModel:
         rerank: bool = False,
         multiquery: bool = False,
         cap: Optional[AsyncOpenAI] = None,
-        model: str = "gpt-4o"
+        model: str = "gpt-4o",
     ):
         load_api_keys()
         if cap is None:
             cap = AsyncOpenAI()
         self.image_processor = ImageProcessor()
         self.captioner = DescriptiveCaptioner(
-            cap=cap, 
-            model=model, 
+            cap=cap,
+            model=model,
         )
         self.rag_model = WikiStellaRAGModel(
             vstore_path=vstore_path,
@@ -217,9 +185,7 @@ class ImageRAGModel:
             results = await self.rag_model.ainvoke(caption=caption)
             if context:
                 docs = await self.rag_model.aretrieve(caption=caption)
-                cntxt = "\n\n".join(
-                    [f"{d.metadata}\n{d.page_content}" for d in docs]
-                )
+                cntxt = "\n\n".join([f"{d.metadata}\n{d.page_content}" for d in docs])
         except Exception as er:
             print(f"{er} occurred")
             caption = ""
