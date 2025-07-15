@@ -40,19 +40,18 @@ import asyncio
 import logging
 import os
 import re
-from pathlib import Path
 from typing import Iterator, Optional, Tuple
 
 import instructor
 import torch
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import DirectoryLoader
-from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.document_loaders import BaseLoader
 from langchain_core.documents import Document
 from openai import AsyncOpenAI
 
+from taxonomic_rag_system.utils.helpers import load_api_keys
 from taxonomic_rag_system.utils.out_models import Chunk
 from taxonomic_rag_system.utils.retriever import SafeHuggingFaceEmbeddings
 
@@ -511,8 +510,6 @@ async def main() -> None:
     -------
          None
     """
-    with open(Path.home() / ".openai.key", "r") as f:
-        os.environ["OPENAI_API_KEY"] = f.read().strip()
     args = parse_arguments()
     source = args.source
     output_path = args.output_path
@@ -520,6 +517,7 @@ async def main() -> None:
     contextualize = args.contextualize
     write = args.write
 
+    load_api_keys()
     llm = AsyncOpenAI()
     client = instructor.from_openai(llm)
 
