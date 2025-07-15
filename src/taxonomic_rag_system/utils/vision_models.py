@@ -45,8 +45,9 @@ import os
 from pathlib import Path
 from typing import Any
 
+import backoff
 import instructor
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, RateLimitError
 
 # Local imports
 from taxonomic_rag_system.utils.out_models import Caption, Tax
@@ -435,6 +436,11 @@ class KScopeTaxClassifierVLM(KScopeVLModel):
             + "..." * 256
         )
 
+    @backoff.on_exception(
+        backoff.expo,
+        RateLimitError,
+        max_tries=3,
+    )
     async def generate_classification(self, image_b64):
         """
         Process image with VLM for taxonomic classification.
@@ -507,7 +513,7 @@ class KScopeUQModel(KScopeVLModel):
     def __init__(
         self,
         cap: Any = None,
-        model: str = "Meta-Llama-3.1-8B-Instruct",  # TODO: NEED TO FIND A GOOD MODEL HERE TO START WITH
+        model: str = "Meta-Llama-3.1-8B-Instruct",
         temp: float = 0,
         vocab_size=128256,  # Adjust vocab size as needed according to model
     ) -> None:
@@ -519,11 +525,16 @@ class KScopeUQModel(KScopeVLModel):
 
             The LLM output you will examine contains a taxonomic classification as well as commentary on the confidence of the classification.
 
-            Your task is to identify language that indicates certainty, uncertainty, confidence or any other indication of that would assist in prediction-level uncertainty quantification.
+            Your task is to identify language that indicates certainty, uncertainty, confidence or any other indicating language that would assist in assessing prediction-level uncertainty quantification.
             """
             + "..." * 256
         )
 
+    @backoff.on_exception(
+        backoff.expo,
+        RateLimitError,
+        max_tries=3,
+    )
     async def generate_logprobs(self, llm_output: str):
         """
         Process LLM output with KScope UQ logprobs adapter.
@@ -639,6 +650,11 @@ class DescriptiveKaptioner(KScopeVLModel):
             print(f"Error during caption generation: {e}")
             return ""
 
+    @backoff.on_exception(
+        backoff.expo,
+        RateLimitError,
+        max_tries=3,
+    )
     async def _caption(self, image_b64: str) -> str:
         """
         Process image with VLM to generate captions.
