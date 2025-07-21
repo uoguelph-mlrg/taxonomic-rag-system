@@ -21,7 +21,7 @@ Dependencies
 - pathlib.Path
 - torch
 - openai.AsyncOpenAI
-- taxonomic_rag_system.utils.evaluator.RareSpeciesEvaluator
+- taxonomic_rag_system.utils.evaluator.LivingArthropodEvaluator
 - taxonomic_rag_system.utils.helpers.simple_string_output
 - taxonomic_rag_system.utils.image_processor.ImageProcessor
 - taxonomic_rag_system.utils.out_models.TaxBiodiversity
@@ -48,10 +48,10 @@ import torch
 from openai import AsyncOpenAI
 
 # Local imports
-from taxonomic_rag_system.utils.evaluator import (
-    RareSpeciesEvaluator,
+from taxonomic_rag_system.utils.living_arthropods_evaluator import (
+    LivingArthropodEvaluator,
 )
-from taxonomic_rag_system.utils.helpers import simple_string_output
+from taxonomic_rag_system.utils.living_arthropods_helpers import simple_string_output
 from taxonomic_rag_system.utils.image_processor import ImageProcessor
 from taxonomic_rag_system.utils.out_models import TaxBiodiversity
 from taxonomic_rag_system.utils.retriever import WikiStellaRAGModel
@@ -68,6 +68,7 @@ class _QueryImageOutput(TypedDict):
 
 
 def load_api_keys() -> None:
+    
     """Load API keys from files."""
     # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
     with open(Path.home() / ".openai.key", "r") as f:
@@ -106,7 +107,7 @@ class ImageRAGModel:
         and optionally provide context.
     async caption_image(image_url=None, image_obj=None, image_path=None):
         Caption an image provided via URL, object, or file path.
-    async rarespecies_dataset_run(verbose=1):
+    async livingarthropods_dataset_run(verbose=1):
         Asynchronously processes a dataset of rare species images using the RAG system.
     """
 
@@ -252,7 +253,7 @@ class ImageRAGModel:
         )
         return await self.captioner.generate_caption(image_b64)
 
-    async def rarespecies_dataset_run(self, verbose: int = 1) -> list[dict[str, Any]]:
+    async def livingarthropods_dataset_run(self, verbose: int = 1) -> list[dict[str, Any]]:
         """
         Asynchronously processes a dataset of rare species images using a RAG system.
 
@@ -283,7 +284,7 @@ class ImageRAGModel:
             - Taxonomy levels - "Phylum", "Class", "Order", "Family", "Genus", "Species"
             - Verbose levels >1 provide detailed logging for debugging purposes.
         """
-        dataloader = RareSpeciesEvaluator().dataloader()
+        dataloader = LivingArthropodEvaluator().dataloader()
         # Processing loop for batch of images
         outputs = []
         
@@ -427,7 +428,7 @@ class NaiveVLModel:
         print("queried...")
         return guess_class
     
-    async def rarespecies_dataset_run(
+    async def livingarthropods_dataset_run(
         self, verbose: int = 1, delay_between_requests: float = 3.0
     ) -> list[dict[str, Union[str, dict[str, Union[str, Any]]]]]:
         """
@@ -444,7 +445,7 @@ class NaiveVLModel:
                 - "guess_class": A dict of predicted taxonomy levels.
                 - "RSID": The unique identifier for the rare species.
         """
-        dataloader = RareSpeciesEvaluator().dataloader()
+        dataloader = LivingArthropodEvaluator().dataloader()
 
         # Processing loop for batch of images
         outputs = []

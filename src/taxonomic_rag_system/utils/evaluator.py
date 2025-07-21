@@ -54,7 +54,7 @@ class RareSpeciesImageClassDataset(Dataset):
     def _set_up(self) -> None:
         # Load the dataset from HuggingFace
         ds = load_dataset("imageomics/rare-species")
-        ds = ds["train"].select(range(0, 999))
+        ds = ds["train"].select(range(0, 10))
         # Map the processing function, filtering out None results
         processed_ds = ds.map(process_row)
         print(f"Pre-filter LENGTH: {processed_ds.num_rows}")
@@ -162,11 +162,11 @@ def process_row(row: Dict[str, Any]) -> Dict[str, Any]:
     """
     try:
         # Check if the image object has the 'getexif' attribute without loading it
-        if not hasattr(row["image"], "getexif"):
+        if not hasattr(row["file_name"], "getexif"):
             raise AttributeError
 
         return {
-            "image": row["image"],
+            "image": row["file_name"],
             "class_dict": {
                 "RSID": row["rarespecies_id"],
                 "Kingdom": row["kingdom"],

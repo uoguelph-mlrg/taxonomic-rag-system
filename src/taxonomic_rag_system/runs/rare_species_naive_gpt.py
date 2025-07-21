@@ -48,7 +48,7 @@ def _parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--write",
         action="store_true",
-        type=bool,
+        #type=bool,
         help="Flag to indicate whether to write the contextualized documents.",
     )
     parser.add_argument(

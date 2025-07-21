@@ -40,6 +40,8 @@ import backoff
 import instructor
 from openai import AsyncOpenAI, RateLimitError
 
+import google.generativeai as genai  # using google's API
+
 # Local imports
 from taxonomic_rag_system.utils.out_models import Caption, Tax
 
@@ -49,12 +51,49 @@ logging.basicConfig(level=logging.INFO)
 
 
 def load_api_keys() -> None:
+    print("loading api key now......")
     """Load API keys from files."""
-    # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
-    with open(Path.home() / ".openai.key", "r") as f:
-        os.environ["OPENAI_API_KEY"] = f.read().strip()
-    with open(Path.home() / ".openrouter.key", "r") as f:
-        os.environ["OPENROUTER_API_KEY"] = f.read().strip()
+    # Set API key env variables w/ `.google.key` file in home dir
+    
+    try:
+        with open(Path.home() / ".google.key", "r") as f:
+            api_key = f.read().strip()
+            genai.configure(api_key = api_key)
+            print(f"✓ Google API key loaded (first 10 chars: {api_key[:10]}...)")
+    except FileNotFoundError:
+        print("✗ .google.key file not found")
+    except Exception as e:
+        print(f"✗ Error loading API key: {e}")
+    
+    client = None
+    
+    try:
+        # Create the instructor client using from_gemini with your specific model
+        
+        client = instructor.from_gemini(
+            client=genai.GenerativeModel(
+                model_name="models/gemini-2.5-flash-lite-preview-06-17",
+            ),
+            mode=instructor.Mode.GEMINI_JSON,
+        )
+        
+        print(f"✓ Instructor client created successfully - type: {type(client)}", flush=True)
+        
+        # Check available methods
+        available_methods = [method for method in dir(client) if not method.startswith('_')]
+        print(f"✓ Available methods: {available_methods}", flush=True)
+        
+        # Check for expected methods
+        if hasattr(client, 'chat'):
+            print("  ✓ Has chat attribute", flush=True)
+        if hasattr(client, 'messages'):
+            print("  ✓ Has messages attribute", flush=True)
+        
+        return client
+        
+    except Exception as e:
+        print(f"✗ Error setting up instructor client: {e}", flush=True)
+        return None
 
 
 class VLM:
@@ -91,7 +130,13 @@ class InstructorVLModel(VLM):
     def __init__(self, cap: Any, model: str, temp: float) -> None:
         super().__init__(cap, model, temp)
         load_api_keys()
-        self.client = instructor.from_openai(self.cap)
+        
+        self.client = instructor.from_gemini(
+            client=genai.GenerativeModel(
+                model_name="models/gemini-2.5-flash-lite-preview-06-17",  # Your specific model
+            ),
+            mode=instructor.Mode.GEMINI_JSON,
+        )
 
 
 class TaxClassifierVLM(VLM):
@@ -115,18 +160,35 @@ class TaxClassifierVLM(VLM):
         generate_caption(image_b64): Generates a taxonomic classification for the image.
     """
 
-    def __init__(self, cap: Any = None, model: str = "", temp: float = 0) -> None:
+    def __init__(self, cap: Any = None, model: str = "gemini-2.5-flash-lite-preview-06-17", temp: float = 0) -> None:
         load_api_keys()
+        
         if cap is None:
-            cap = AsyncOpenAI(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=os.environ["OPENROUTER_API_KEY"],
-                default_headers={
-                    "HTTP-Referer": "https://github.com/uoguelph-mlrg/taxonomic-rag-system",
-                    "X-Title": "Taxonomic RAG Classifier",
-                },
+            raw_model = genai.GenerativeModel(
+                model_name="models/gemini-2.5-flash-lite-preview-06-17",
             )
+            cap = instructor.from_gemini(
+                client=raw_model,
+                mode=instructor.Mode.GEMINI_JSON,
+            )
+        else:
+            print(f"cap provided: {cap}, type: {type(cap)}")   
+            
+        # ========================================= edit here
+            if hasattr(cap, 'chat') and hasattr(cap.chat, 'completions'):
+                print ("already instructory")
+                pass
+            else:
+                cap = instructor.from_gemini(
+                    client=cap,
+                    mode=instructor.Mode.GEMINI_JSON,
+                )
+                print(f"AGAIN! cap provided: {cap}, type: {type(cap)}")  
+        
+        # =========================================  
+                         
         super().__init__(cap, model, temp)
+        
         self.system_prompt = (
             """
             You are an expert AI vision assistant to a taxonomist. Examine the image, analyze the primary organism's features, and provide a taxonomic classification.
@@ -152,7 +214,6 @@ class TaxClassifierVLM(VLM):
             """
             + "..." * 256
         )
-        
     @backoff.on_exception(
         backoff.expo,
         RateLimitError,
@@ -173,7 +234,7 @@ class TaxClassifierVLM(VLM):
         try:
             return await self._taxonomist(image_b64)
         except Exception as e:
-            print(f"Error during caption generation: {e}")
+            print(f"Error during taxonomic classification: {e}")
             return {
                 "Kingdom": "Animalia",
                 "Phylum": "N/A",
@@ -198,44 +259,43 @@ class TaxClassifierVLM(VLM):
         -------
             A dictionary containing the taxonomic classification.
         """
-        raw_resp = await self.cap.chat.completions.create(
-            model=self.model,
-            temperature=self.temp,
+        raw_resp = self.cap.chat.completions.create(
+            #model=self.model,
+            #temperature=self.temp,
             messages=[
                 {"role": "system", "content": self.system_prompt},
                 {
-                    "role": "user",
+                    "role": "user", 
                     "content": [
                         {
-                            "type": "text",
-                            "text": "Provide a taxonomic classification for the primary organism visible in the following image.",
+                            "text": "Provide a taxonomic classification for the primary organism visible in the following image."
                         },
                         {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_b64}",
-                                "detail": "high",
-                            },
-                        },
-                    ],
-                },
+                            "inline_data": {
+                                "mime_type": "image/jpeg",
+                                "data": image_b64
+                            }
+                        }
+                    ]
+                }
             ],
-            response_format={"type": "json_object"},
+            #response_format={"type": "json_object"}, Open AI format
+            response_model = Tax,
         )
 
         # Log the raw response for inspection
         logging.debug(f"Raw response: {raw_resp}")
 
         # Extract the JSON string
-        json_content = raw_resp.choices[0].message.content
+        #json_content = raw_resp.choices[0].message.content
 
         # Parse the JSON string to a Python dictionary
-        parsed_data = json.loads(json_content)
+        # parsed_data = json.loads(json_content)
 
         # Manually parse the response to a Tax object
-        tax = Tax.model_validate(parsed_data)
-        assert isinstance(tax, Tax)
-        return {key: val for key, val in tax.classification.items() if key != "Domain"}
+        #tax = Tax.model_validate(parsed_data)
+        assert isinstance(raw_resp, Tax)
+        return {key: val for key, val in raw_resp.classification.items() if key != "Domain"}
 
 
 class DescriptiveCaptioner(InstructorVLModel):
@@ -261,7 +321,10 @@ class DescriptiveCaptioner(InstructorVLModel):
         temp: float = 0,
     ) -> None:
         if cap is None:
-            cap = AsyncOpenAI()
+            cap = genai.GenerativeModel(
+                model_name="models/gemini-2.5-flash-lite-preview-06-17",
+            )
+            
         super().__init__(cap, model, temp)
         self.system_prompt = (
             """
@@ -288,11 +351,6 @@ class DescriptiveCaptioner(InstructorVLModel):
         """
             + "..." * 256
         )
-    @backoff.on_exception(
-        backoff.expo,
-        RateLimitError,
-        max_tries=3,
-    )
 
     async def generate_caption(self, image_b64: str) -> str:
         """
@@ -322,7 +380,7 @@ class DescriptiveCaptioner(InstructorVLModel):
         -------
             A string caption containing the detailed description of image features.
         """
-        raw_resp = await self.client.chat.completions.create(
+        raw_resp = self.client.chat.completions.create(
             model=self.model,
             temperature=self.temp,
             messages=[
@@ -331,18 +389,16 @@ class DescriptiveCaptioner(InstructorVLModel):
                     "role": "user",
                     "content": [
                         {
-                            "type": "text",
-                            "text": "Write an exhaustive and detailed caption for this image, describing every observable feature thoroughly.",
+                            "text": "Write an exhaustive and detailed caption for this image, describing every observable feature thoroughly."
                         },
                         {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_b64}",
-                                "detail": "high",
-                            },
-                        },
-                    ],
-                },
+                            "inline_data": {
+                                "mime_type": "image/jpeg", 
+                                "data": image_b64
+                            }
+                        }
+                    ]
+                }
             ],
             response_model=Caption,
         )

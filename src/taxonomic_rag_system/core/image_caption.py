@@ -4,10 +4,10 @@ Module providing the "Simple RAG Model" from the `ImageRAGModel` class.
 This model integrates image processing, caption generation, and
 retrieval-augmented generation (RAG) for taxonomic classification
 and biodiversity knowledge extraction. It also includes methods for querying images,
-generating captions, and evaluating datasets of rare species.
+generating captions, and evaluating datasets of living arthropods.
 
 Classes
-ImageRAGModel
+ImageCaptionModel
     A class that combines image processing, descriptive captioning, and RAG-based
     retrieval to perform taxonomic classification and biodiversity knowledge extraction.
 NaiveVLModel
@@ -21,7 +21,7 @@ Dependencies
 - pathlib.Path
 - torch
 - openai.AsyncOpenAI
-- taxonomic_rag_system.utils.evaluator.RareSpeciesEvaluator
+- taxonomic_rag_system.utils.evaluator.LivingArthropodEvaluator
 - taxonomic_rag_system.utils.helpers.simple_string_output
 - taxonomic_rag_system.utils.image_processor.ImageProcessor
 - taxonomic_rag_system.utils.out_models.TaxBiodiversity
@@ -48,10 +48,10 @@ import torch
 from openai import AsyncOpenAI
 
 # Local imports
-from taxonomic_rag_system.utils.evaluator import (
-    RareSpeciesEvaluator,
+from taxonomic_rag_system.utils.living_arthropods_evaluator import (
+    LivingArthropodEvaluator,
 )
-from taxonomic_rag_system.utils.helpers import simple_string_output
+from taxonomic_rag_system.utils.living_arthropods_helpers import simple_string_output
 from taxonomic_rag_system.utils.image_processor import ImageProcessor
 from taxonomic_rag_system.utils.out_models import TaxBiodiversity
 from taxonomic_rag_system.utils.retriever import WikiStellaRAGModel
@@ -72,18 +72,18 @@ def load_api_keys() -> None:
     # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
     with open(Path.home() / ".openai.key", "r") as f:
         os.environ["OPENAI_API_KEY"] = f.read().strip()
-    with open(Path.home() / ".openrouter.key", "r") as f: #using second key.
+    with open(Path.home() / ".openrouter.key", "r") as f:
         os.environ["OPENROUTER_API_KEY"] = f.read().strip()
 
 
-class ImageRAGModel:
+class ImageCaptionModel:
     """
     Taxonomically classify with confidence reasoning and biodiversity knowledge.
 
-    This class integrates an image processor, a descriptive captioner, and a RAG model
+    This class integrates an image processor and  a descriptive captioner,
     to provide functionalities such as querying images to full pipeline
     or simply generate captions, as well as full evaluation runs over the
-    rare species dataset.
+    living arthropods dataset.
 
     Attributes
     ----------
@@ -107,45 +107,29 @@ class ImageRAGModel:
     async caption_image(image_url=None, image_obj=None, image_path=None):
         Caption an image provided via URL, object, or file path.
     async rarespecies_dataset_run(verbose=1):
-        Asynchronously processes a dataset of rare species images using the RAG system.
+        Asynchronously processes a dataset of living arthropods images using the RAG system.
     """
 
     def __init__(
         self,
-        vstore_path: str,
-        collection_name: str = "Wiki_contexted",
-        embedding_model: str = "dunzhang/stella_en_1.5B_v5",
-        search_type: str = "similarity",
-        k: int = 30,
-        rerank: bool = False,
-        multiquery: bool = False,
         cap: Optional[AsyncOpenAI] = None,
-        model: str = "gpt-4o",
+        model: str = "gpt-4o", #originally gpt-4o is here
+        use_openrouter: bool = True 
     ):
-        if cap is None:
-            cap = AsyncOpenAI()
         load_api_keys()
+        if cap is None:
+            if use_openrouter:
+                # configuring AsyncOpenAI for OpenRouter
+                cap = AsyncOpenAI(
+                    api_key=os.environ["OPENROUTER_API_KEY"],
+                    base_url="https://openrouter.ai/api/v1"
+                )
+            else:
+                cap = AsyncOpenAI()
+        
         self.image_processor = ImageProcessor()
         self.captioner = DescriptiveCaptioner(cap=cap, model=model)
-        self.rag_model = WikiStellaRAGModel(
-            vstore_path=vstore_path,
-            collection_name=collection_name,
-            embedding_model=embedding_model,
-            search_type=search_type,
-            k=k,
-            rerank=rerank,
-            multiquery=multiquery,
-        )
-
-    def get_device(self) -> torch.device:
-        """
-        Retrieve the device on which the model is currently loaded.
-
-        Returns
-        -------
-            torch.device: The device (e.g., CPU or GPU) used by the RAG model.
-        """
-        return self.rag_model.device
+        self.tax_classifier = TaxClassifierVLM(model=model, cap=cap) # eventually add it all in one model (generating captions and taxonomically classify for faster baseline experiment)
 
     async def query_image(
         self,
@@ -187,15 +171,26 @@ class ImageRAGModel:
             image_b64 = self.image_processor.process_image(
                 image_url=image_url, image_obj=image_obj, image_path=image_path
             )
-            caption = await self.captioner.generate_caption(image_b64)
+            caption = await self.captioner.generate_caption(image_b64) # Caption Generation
+            
             if verbose > 0:
-                print("querying...")
-            results = await self.rag_model.ainvoke(caption=caption)
-            if context:
-                docs = await self.rag_model.aretrieve(caption=caption)
-                cntxt = "\n\n".join(
-                    [f"{d.metadata}\n{d.page_content}" for d in docs]
-                )  # Convert to string
+                print(f"Caption Generated: {caption}") # Print out caption 
+                results = TaxBiodiversity(
+                classification={
+                    "Kingdom": "Animalia",
+                    "Phylum": "N/A",
+                    "Class": "N/A",
+                    "Order": "N/A",
+                    "Family": "N/A",
+                    "Genus": "N/A",
+                    "Species": "N/A",
+                },
+                ancestral="",
+                specific="",
+                commentary="",
+                bio_knowledge="",
+            )
+                
         except Exception as er:
             print(f"{er} occurred")
             caption = ""
@@ -252,9 +247,9 @@ class ImageRAGModel:
         )
         return await self.captioner.generate_caption(image_b64)
 
-    async def rarespecies_dataset_run(self, verbose: int = 1) -> list[dict[str, Any]]:
+    async def livingarthropods_dataset_run(self, verbose: int = 1) -> list[dict[str, Any]]:
         """
-        Asynchronously processes a dataset of rare species images using a RAG system.
+        Asynchronously processes a dataset of living arthropods images using a RAG system.
 
         Args:
             verbose (int, optional): Verbosity level for logging and debugging.
@@ -276,50 +271,38 @@ class ImageRAGModel:
                 - "biodiversity" (str): Biodiversity-related knowledge.
                 - "guess_class" (dict): Predicted taxonomy classification w/o "Domain".
                 - "response" (str): Simplified string representation of the output.
-                - "RSID" (str): Unique identifier for the rare species.
+                - "RSID" (str): Unique identifier for the living arthropods.
 
         Notes
         -----
             - Taxonomy levels - "Phylum", "Class", "Order", "Family", "Genus", "Species"
             - Verbose levels >1 provide detailed logging for debugging purposes.
         """
-        dataloader = RareSpeciesEvaluator().dataloader()
+        dataloader = LivingArthropodEvaluator().dataloader()
+        
         # Processing loop for batch of images
         outputs = []
         
         for image_objs, class_dicts in dataloader:
             tasks, true_classes, batch = [], [], []
             
-            # RAG on each caption
+            # Classify on each caption
             for img_obj, class_dict in zip(image_objs, class_dicts):
                 tasks.append(self.query_image(image_obj=img_obj, context=False))
                 true_classes.append(class_dict)
-            rag_responses = await asyncio.gather(*tasks)
+            vlm_responses = await asyncio.gather(*tasks)
             torch.cuda.empty_cache()
-            for i, response in enumerate(rag_responses):
+            
+            for i, response in enumerate(vlm_responses):
                 true_class = {
                     level: true_classes[i][level]
                     for level in true_classes[i]
                     if level != "id"
                 }
-                output: dict[str, Union[str, dict[str, str]]] = {
-                    "caption": response["caption"],
-                    "true_class": true_class,
-                    "context": response.get("context", ""),
-                    "ancestral": response["results"].ancestral,
-                    "specific": response["results"].specific,
-                    "commentary": response["results"].commentary,
-                    "biodiversity": response["results"].bio_knowledge,
-                }
                 # Output parse
-                cls = response["results"].classification
+                cls = response
                 guess_class = {
                     level: cls[level] for level in cls if cls[level] != "N/A"
-                }
-                guess_class = {
-                    level: guess_class[level]
-                    for level in guess_class
-                    if level != "Domain"
                 }
                 if verbose > 1:
                     taxonomy_levels = [
@@ -337,14 +320,11 @@ class ImageRAGModel:
                         pred_value = guess_class.get(level, "")
                         print(f"{level:<10}{true_value:<30}{pred_value:<30}")
                     print("=" * 50)
-                output["guess_class"] = guess_class
-                output["response"] = simple_string_output(output)
-                output["id"] = true_classes[i]["id"]
-                if verbose > 2:
-                    print("=" * 50)
-                    print(output["caption"])
-                    print("=" * 50)
-                    print(output["response"])
+                output: dict[str, Union[str, dict[str, str]]] = {
+                    "true_class": true_class,
+                    "guess_class": guess_class,
+                    "id": true_classes[i]["id"],
+                }
                 batch.append(output)
             outputs.extend(batch)
         gc.collect()
@@ -356,7 +336,7 @@ class NaiveVLModel:
     """
     A class for tasking a VLM with taxonomic classification.
 
-    Class methods for evaluation over the rare species dataset.
+    Class methods for evaluation over the living arthropods dataset.
 
     Attributes
     ----------
@@ -371,7 +351,7 @@ class NaiveVLModel:
         query(image_path=None, image_obj=None):
             Processe an image and generate a classification guess using the VLM.
 
-        async rarespecies_dataset_run(verbose=1):
+        async livingarthropods_dataset_run(verbose=1):
             Evaluate on the rare-species dataset then show, write and return results.
     """
 
@@ -426,12 +406,12 @@ class NaiveVLModel:
             }
         print("queried...")
         return guess_class
-    
-    async def rarespecies_dataset_run(
-        self, verbose: int = 1, delay_between_requests: float = 3.0
+
+    async def livingarthropods_dataset_run(
+        self, verbose: int = 1
     ) -> list[dict[str, Union[str, dict[str, Union[str, Any]]]]]:
         """
-        Pass over the rare-species dataset.
+        Pass over the living-arthropods dataset.
 
         Args:
             verbose (int, optional): Verbosity level for logging. Defaults to 1.
@@ -442,12 +422,9 @@ class NaiveVLModel:
             list: A list of dictionaries containing the following keys:
                 - "true_class": A dict of true taxonomy levels (excluding "RSID").
                 - "guess_class": A dict of predicted taxonomy levels.
-                - "RSID": The unique identifier for the rare species.
+                - "RSID": The unique identifier for the living arthropods.
         """
-        dataloader = RareSpeciesEvaluator().dataloader()
-
-        # Processing loop for batch of images
-        outputs = []
+        dataloader = LivingArthropodEvaluator().dataloader()
         
         # Processing loop for batch of images
         outputs = []
@@ -458,10 +435,10 @@ class NaiveVLModel:
                 tasks.append(self.query(image_obj=img_obj))
                 true_classes.append(class_dict)
             # Run the VLM queries in parallel
-            rag_responses = await asyncio.gather(*tasks)
-            
+            vlm_responses = await asyncio.gather(*tasks)
             torch.cuda.empty_cache()
-            for i, response in enumerate(rag_responses):
+            
+            for i, response in enumerate(vlm_responses):
                 true_class = {
                     level: true_classes[i][level]
                     for level in true_classes[i]
