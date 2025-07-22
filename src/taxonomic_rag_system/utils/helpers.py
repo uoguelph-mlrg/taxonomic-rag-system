@@ -1,20 +1,20 @@
 """
 Helper functions for the taxonomic RAG system.
 
-This module provides a comprehensive set of utility functions to facilitate
-various tasks in the taxonomic RAG system. These include document formatting
-for LLM prompts, image processing for handling base64 and PIL image conversions,
-and string formatting for generating detailed taxonomic classification outputs.
-Additionally, the module supports classification evaluation by computing metrics
-such as accuracy and F1 scores, comparing true to predicted classifications,
-and generating classification reports of taxonomic predictions.
+Together, these functions streamline the workflow for
+taxonomic classification tasks, enabling efficient data processing, evaluation,
+and reporting in the taxonomic RAG system.
 
-The module also includes utilities for hierarchical metrics, RAG evaluation
-for assessing response quality using faithfulness and relevancy metrics,
-and file writing utilities for exporting metrics and predictions to CSV files.
-It supports advanced evaluation pipelines, including hierarchical precision,
-recall, and F1-score calculations, and provides custom collate functions for
-batch processing.
+This module provides a comprehensive set of utility functions to facilitate
+various tasks in the taxonomic RAG system, including:
+- converting images from URLs or files to Base64-encoded strings
+- document formatting for feeding into LLM context
+- generating formatted strings for taxonomic classification outputs
+- evaluating classification using accuracy and F1 scores with performance reporting
+- hierarchical metrics: precision, recall, and F1-score
+- RAG evaluation for assessing response quality using faithfulness and relevancy metrics
+- file writing utilities for exporting metrics and predictions to CSV files
+- custom collate functions for dataloader batch processing
 
 Dependencies:
     - base64
@@ -445,8 +445,8 @@ async def rag_evaluate(
     Evaluate the quality of a response in a Retrieval-Augmented Generation (RAG) system.
 
     This function takes an output dictionary and embeddings, formats the input,
-    and computes [RAGAS scores](https://docs.ragas.io/en/stable/concepts/metrics/) for faithfulness and response relevancy using an LLM
-    and embeddings.
+    and computes [RAGAS scores](https://docs.ragas.io/en/stable/concepts/metrics/) for
+    faithfulness and response relevancy using an LLM and embeddings.
 
     Args:
         eval_dict (dict): A dictionary containing the evaluation data. It must include:
@@ -518,7 +518,7 @@ def write_overall_metrics(csv_filename: str, data: Dict[str, Dict[str, float]]) 
     This function takes a dictionary of metrics and writes them to a CSV file.
     The CSV file will include a header row with "Rank", "Accuracy", and "F1".
     For each rank in the data, it writes the corresponding accuracy and F1 score
-    if available. Additionally, it handles taxonomic-wise metrics and overall
+    if available. Additionally, it handles rank-level performance metrics and overall
     metrics (like hr, hp, hf) separately, adding empty rows for readability.
 
     Args:
@@ -534,7 +534,7 @@ def write_overall_metrics(csv_filename: str, data: Dict[str, Dict[str, float]]) 
 
     Notes
     -----
-        - Taxonomic-wise metrics (not accuracy or F1) are written separately.
+        - Rank-level performance metrics (not accuracy or F1) are written separately.
         - Overall metrics (not specific to taxonomic ranks) are written at the end.
         - Empty rows are added for better readability in the CSV file.
     """
@@ -542,7 +542,7 @@ def write_overall_metrics(csv_filename: str, data: Dict[str, Dict[str, float]]) 
         writer = csv.writer(file)
         # Write the header
         writer.writerow(["Rank", "Accuracy", "F1", "Attempts"])
-        tax_wises = []  # For taxonomic-wise metrics that aren't accuracy and f1
+        tax_wises = []  # For rank-level performance metrics that aren't accuracy and f1
         overall_metrics = []
         # Write each rank's metrics
         for rank, metrics in data.items():
@@ -555,7 +555,7 @@ def write_overall_metrics(csv_filename: str, data: Dict[str, Dict[str, float]]) 
                         metrics.get("count", ""),
                     ]
                 )
-            elif rank in RANKS:  # For other taxonomic-wise metrics
+            elif rank in RANKS:  # For other rank-level performance metrics
                 tax_wises.append([rank, metrics, ""])
             # Other metrics not individualized to taxonomic ranks
             # note: `rank` here is metric name str, `metrics` is the float/int value
@@ -706,7 +706,7 @@ def hierarchical_metrics(
 
     Compares true taxonomic classifications with predicted classifications and
     calculates the prediction set's hierarchical precision (hP), hierarchical
-    recall (hR), and hierarchical F1 (hF).
+    recall (hR), and hierarchical F1 (hF) [(Snæbjarnarson et al., 2025)](https://arxiv.org/abs/2504.05457).
 
     Keys in each dict should be the standard Linnaean ranks from Phylum and below,
     (e.g. "Phylum", "Class", ..., "Species"), but is case-insensitive.
@@ -772,15 +772,13 @@ def hierarchical_metrics(
         hr_sum += hr_i
 
     # Sum over all examples
-hp = hp_sum / n
-hr = hr_sum / n
-hf = (2 * hp * hr / (hp + hr)) if (hp + hr) > 0 else 0.0
+    hp = hp_sum / n
+    hr = hr_sum / n
+    hf = (2 * hp * hr / (hp + hr)) if (hp + hr) > 0 else 0.0
 
-if verbose:
-    print(f"Hierarchical Precision (hp): {hp:.3f}")
-    print(f"Hierarchical Recall (hr): {hr:.3f}")
-    print(f"Hierarchical F1 (hf): {hf:.3f}")
-
-return {"hp": hp, "hr": hr, "hf": hf}
+    if verbose:
+        print(f"Hierarchical Precision (hp): {hp:.3f}")
+        print(f"Hierarchical Recall (hr): {hr:.3f}")
+        print(f"Hierarchical F1 (hf): {hf:.3f}")
 
     return {"hp": hp, "hr": hr, "hf": hf}
