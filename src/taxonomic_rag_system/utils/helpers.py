@@ -445,7 +445,7 @@ async def rag_evaluate(
     Evaluate the quality of a response in a Retrieval-Augmented Generation (RAG) system.
 
     This function takes an output dictionary and embeddings, formats the input,
-    and computes RAGAS scores for faithfulness and response relevancy using an LLM
+    and computes [RAGAS scores](https://docs.ragas.io/en/stable/concepts/metrics/) for faithfulness and response relevancy using an LLM
     and embeddings.
 
     Args:
@@ -772,13 +772,15 @@ def hierarchical_metrics(
         hr_sum += hr_i
 
     # Sum over all examples
-    hp = round(hp_sum / n, 3)
-    hr = round(hr_sum / n, 3)
-    hf = round((2 * hp * hr / (hp + hr)), 3) if (hp + hr) > 0 else 0.000
+hp = hp_sum / n
+hr = hr_sum / n
+hf = (2 * hp * hr / (hp + hr)) if (hp + hr) > 0 else 0.0
 
-    if verbose:
-        print(f"Hierarchical Precision (hp): {hp}")
-        print(f"Hierarchical Recall (hr): {hr}")
-        print(f"Hierarchical F1 (hf): {hf}")
+if verbose:
+    print(f"Hierarchical Precision (hp): {hp:.3f}")
+    print(f"Hierarchical Recall (hr): {hr:.3f}")
+    print(f"Hierarchical F1 (hf): {hf:.3f}")
+
+return {"hp": hp, "hr": hr, "hf": hf}
 
     return {"hp": hp, "hr": hr, "hf": hf}
