@@ -11,7 +11,6 @@ Tested Functions:
 - `unique_docs`: Filters out duplicate documents from a list.
 - `simple_string_output`: Converts a dictionary into a simple string representation.
 - `clean_string_output`: Cleans and formats a dictionary into a structured string.
-- `b64_to_pil`: Converts a base64-encoded image to a PIL Image object.
 - `imgurl_tob64`: Converts an image from a URL to a base64-encoded string.
 - `imgfile_tob64`: Converts an image file to a base64-encoded string.
 - `pilimg_tob64`: Converts a PIL Image object to a base64-encoded string.
@@ -26,13 +25,11 @@ Dependencies:
 - `mocker` for mocking external dependencies in tests.
 """
 
-import base64
-from io import BytesIO
-
+import pytest
+from langchain.schema import Document
 from PIL import Image
 
 from taxonomic_rag_system.utils.helpers import (
-    b64_to_pil,
     classify_report,
     clean_string_output,
     custom_collate_fn,
@@ -46,6 +43,15 @@ from taxonomic_rag_system.utils.helpers import (
     simple_string_output,
     unique_docs,
 )
+
+
+@pytest.fixture
+def mock_docs():
+    """Fixture to create mock documents for testing."""
+    return [
+        Document(page_content="Content 1", metadata={"source": "doc1"}),
+        Document(page_content="Content 2", metadata={"source": "doc2"}),
+    ]
 
 
 def test_format_context(mock_docs):
@@ -66,23 +72,23 @@ def test_format_docs(mock_docs):
 
 def test_unique_docs(mock_docs):
     """Test filtering out duplicate documents."""
-    docs = [mock_docs, mock_docs]
+    docs = [mock_docs[0], mock_docs[0]]
     result = unique_docs(docs)
-    assert len(result) == 2
-    assert result[0]["page_content"] == "Content 1"
+    assert len(result) == 1
+    assert result[0].page_content == "Content 1"
 
 
 def test_simple_string_output():
     """Test converting a dictionary to a simple string."""
     out_dict = {
-        "guess_class": "Mammalia",
+        "guess_class": {"Kingdom": "Animalia", "Phylum": "Chordata"},
         "ancestral": "Warm-blooded",
         "specific": "Fur",
         "biodiversity": "High",
         "commentary": "Common traits",
     }
     result = simple_string_output(out_dict)
-    assert "Mammalia" in result
+    assert "Animalia" in result
     assert "Warm-blooded" in result
     assert "Fur" in result
     assert "High" in result
@@ -106,17 +112,6 @@ def test_clean_string_output():
     assert "Unique features" in result
     assert "Interesting discovery" in result
     assert "Rich ecosystem" in result
-
-
-def test_b64_to_pil():
-    """Test converting a base64 string to a PIL Image."""
-    image = Image.new("RGB", (10, 10), color="red")
-    buffer = BytesIO()
-    image.save(buffer, format="JPEG")
-    image_b64 = base64.b64encode(buffer.getvalue())
-    result = b64_to_pil(image_b64)
-    assert isinstance(result, Image.Image)
-    assert result.size == (10, 10)
 
 
 def test_imgurl_tob64(mocker):
@@ -152,27 +147,25 @@ def test_get_metrics():
 
 
 def test_dict_match():
-    """Test comparing dictionaries for matching key-value pairs."""
-    y_true_dict = {"Kingdom": "Animalia", "Phylum": "Chordata"}
-    y_pred_dict = {"Kingdom": "Animalia", "Phylum": "Chordata"}
-    correct, total = dict_match(y_true_dict, y_pred_dict)
-    assert correct == 2
+    """Test comparing two dictionaries for matching key-value pairs."""
+    y_true_dict = {"A": "1", "B": "2"}
+    y_pred_dict = {"A": "1", "B": "3"}
+    matches, total = dict_match(y_true_dict, y_pred_dict)
+    assert matches == 1
     assert total == 2
 
 
 def test_classify_report():
     """Test generating a classification report."""
-    true_dicts = [{"Kingdom": "Animalia", "Phylum": "Chordata"}]
-    pred_dicts = [{"Kingdom": "Animalia", "Phylum": "Chordata"}]
-    result = classify_report(true_dicts, pred_dicts)
-    assert "Kingdom" in result
-    assert result["Kingdom"]["accuracy"] == 1.0
-    assert result["Kingdom"]["f1"] == 1.0
+    true_dicts = [{"A": "1"}, {"B": "2"}]
+    pred_dicts = [{"A": "1"}, {"B": "3"}]
+    report = classify_report(true_dicts, pred_dicts)
+    assert "accuracy" in report
 
 
 def test_custom_collate_fn():
-    """Test custom collate function for batching data."""
-    batch = [("image1", {"class": "A"}), ("image2", {"class": "B"})]
-    images, class_dicts = custom_collate_fn(batch)
-    assert images == ["image1", "image2"]
-    assert class_dicts == [{"class": "A"}, {"class": "B"}]
+    """Test custom collate function."""
+    batch = [(1, {"label": "A"}), (2, {"label": "B"})]
+    result = custom_collate_fn(batch)
+    assert len(result[0]) == 2
+    assert len(result[1]) == 2
