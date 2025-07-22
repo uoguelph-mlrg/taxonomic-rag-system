@@ -1,15 +1,14 @@
 """
 Module providing main entry point for a Simple RAG Model for taxonomic classification.
 
-It builds the `ImageRAGModel` class using a pre-trained VLM model from OpenAI and
-a vector database build from Wiki documents.
+It builds the `ImageCaptionModel` class using a pre-trained VLM model from OpenAI.
 
-This script runs the model on imageomic's rare species dataset and
+This script runs the model on living arthropod dataset and
 extracts taxonomic predictions as well as evaluation of performance.
 
 The script performs the following steps:
 1. Parses command-line arguments for output paths and a flag whether to write results.
-2. Builds an ImageRAGModel and runs it on a rare species dataset.
+2. Builds an ImageCaptionModel and runs it on a living arthropod dataset.
 3. Optionally writes the results (metrics and predictions) to timestamped CSV files.
 
 Modules:
@@ -42,7 +41,7 @@ import datetime
 from taxonomic_rag_system.core.image_caption import ImageCaptionModel
 
 # Local imports
-from taxonomic_rag_system.utils.living_arthropods_helpers import (
+from taxonomic_rag_system.utils.helpers import (
     extract_tax_metrics_rs,
     write_overall_metrics,
     write_preds_to_csv,

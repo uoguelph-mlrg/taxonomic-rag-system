@@ -1,10 +1,9 @@
 """
 Module providing the "Simple RAG Model" from the `ImageRAGModel` class.
 
-This model integrates image processing, caption generation, and
-retrieval-augmented generation (RAG) for taxonomic classification
-and biodiversity knowledge extraction. It also includes methods for querying images,
-generating captions, and evaluating datasets of rare species.
+This model integrates image processing, caption generation, and or taxonomic classification
+and biodiversity knowledge extraction before and after training the model via GRPO.
+It also includes methods for querying images, generating captions, and evaluating datasets of living arthropods.
 
 Classes
 ImageRAGModel
@@ -45,8 +44,7 @@ from pathlib import Path
 from typing import Any, Optional, TypedDict, Union
 
 import torch
-# from openai import AsyncOpenAI
-import google.generativeai as genai  # using google's API
+from openai import AsyncOpenAI
 
 # Local imports
 from taxonomic_rag_system.utils.living_arthropods_evaluator import (
@@ -56,7 +54,8 @@ from taxonomic_rag_system.utils.living_arthropods_helpers import simple_string_o
 from taxonomic_rag_system.utils.image_processor import ImageProcessor
 from taxonomic_rag_system.utils.out_models import TaxBiodiversity
 from taxonomic_rag_system.utils.retriever import WikiStellaRAGModel
-from taxonomic_rag_system.utils.vision_models_gemini import (
+from taxonomic_rag_system.utils.vision_models import (
+    DescriptiveCaptioner,
     TaxClassifierVLM,
 )
 
@@ -70,17 +69,17 @@ class _QueryImageOutput(TypedDict):
 def load_api_keys() -> None:
     
     """Load API keys from files."""
-    # Set API key env variables w/ `.google.key` file in home dir
-    with open(Path.home() / ".google.key", "r") as f:
-        api_key = f.read().strip()
-        genai.configure(api_key = api_key)
-
+    # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
+    with open(Path.home() / ".openai.key", "r") as f:
+        os.environ["OPENAI_API_KEY"] = f.read().strip()
+    with open(Path.home() / ".openrouter.key", "r") as f: #using second key.
+        os.environ["OPENROUTER_API_KEY"] = f.read().strip()
 
 class NaiveVLModel:
     """
     A class for tasking a VLM with taxonomic classification.
 
-    Class methods for evaluation over the rare species dataset.
+    Class methods for evaluation over the living arthropods dataset.
 
     Attributes
     ----------
@@ -89,13 +88,13 @@ class NaiveVLModel:
 
     Methods
     -------
-        __init__(model="google/gemini-2.5-flash-lite-preview-06-17"):
+        __init__(model="google/gemini-2.0-flash-001"):
             Initializes the NaiveVLModel with a specified (OpenRouter) VLM model.
 
         query(image_path=None, image_obj=None):
             Processe an image and generate a classification guess using the VLM.
 
-        async livingarthropods_dataset_run(verbose=1):
+        async rarespecies_dataset_run(verbose=1):
             Evaluate on the rare-species dataset then show, write and return results.
     """
 
@@ -103,11 +102,11 @@ class NaiveVLModel:
 
     def __init__(
         self,
-        model: str = "models/gemini-2.5-flash-lite-preview-06-17",
-        openrouter: bool = False,
+        model: str = "google/gemini-2.0-flash-001",
+        openrouter: bool = True,
     ):
         load_api_keys()
-        cap = genai.GenerativeModel(model_name="models/gemini-2.5-flash-lite-preview-06-17",)
+        cap = AsyncOpenAI() if not openrouter else None
         self.image_processor = ImageProcessor()
         self.model = TaxClassifierVLM(model=model, cap=cap)
 
@@ -132,8 +131,10 @@ class NaiveVLModel:
             image_b64 = self.image_processor.process_image(
                 image_path=image_path, image_obj=image_obj
             )
+            
             print("querying...")
-            guess_class = await self.model.generate_taxonomy(image_b64)
+            
+            guess_class = await self.model.generate_taxonomy(image_b64) # taken from TaxClassiferVLM
             guess_class = {
                 level: guess_class[level] for level in guess_class if level != "Domain"
             }
@@ -155,7 +156,7 @@ class NaiveVLModel:
         self, verbose: int = 1, delay_between_requests: float = 3.0
     ) -> list[dict[str, Union[str, dict[str, Union[str, Any]]]]]:
         """
-        Pass over the rare-species dataset.
+        Pass over the living arthropods dataset.
 
         Args:
             verbose (int, optional): Verbosity level for logging. Defaults to 1.
@@ -166,17 +167,15 @@ class NaiveVLModel:
             list: A list of dictionaries containing the following keys:
                 - "true_class": A dict of true taxonomy levels (excluding "RSID").
                 - "guess_class": A dict of predicted taxonomy levels.
-                - "RSID": The unique identifier for the rare species.
+                - "id": The unique identifier for the living arthropods.
         """
         dataloader = LivingArthropodEvaluator().dataloader()
 
         # Processing loop for batch of images
         outputs = []
-        
-        # Processing loop for batch of images
-        outputs = []
         for image_objs, class_dicts in dataloader:
             tasks, true_classes, batch = [], [], []
+            
             # Naive VLM Tax classifier on each image
             for img_obj, class_dict in zip(image_objs, class_dicts):
                 tasks.append(self.query(image_obj=img_obj))

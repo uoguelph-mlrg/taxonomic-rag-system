@@ -26,7 +26,7 @@ from datasets import load_dataset, Image as HFImage, Dataset
 from torch.utils.data import DataLoader, Dataset
 import sys
 
-from taxonomic_rag_system.utils.living_arthropods_helpers import custom_collate_fn
+from taxonomic_rag_system.utils.helpers import custom_collate_fn
 
 
 class LivingArthropodImageClassDataset(Dataset):
@@ -56,7 +56,7 @@ class LivingArthropodImageClassDataset(Dataset):
         # Load the dataset 
         data_files = "/home/vphung/projects/aip-gwtaylor/vphung/datasets/living-arthropods-dataset/living-arthropod-dataset.csv"
         ds = load_dataset("csv", data_files=data_files, name="arthropod_data")
-        ds = ds["train"].select(range(0, 240))
+        ds = ds["train"].select(range(0, 10))
         ds = ds.cast_column("ImageUrl", HFImage())
         example = ds[1]
         
@@ -93,7 +93,7 @@ class LivingArthropodImageClassDataset(Dataset):
             
         #processed_ds = ds.map(process_row)
         
-        small_subset = ds.select(range(240))  
+        small_subset = ds.select(range(10))  
         processed_ds = small_subset.map(process_row)
         # =========================================================
         

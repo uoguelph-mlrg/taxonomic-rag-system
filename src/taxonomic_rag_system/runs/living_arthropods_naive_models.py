@@ -1,14 +1,14 @@
 """
 Module providing main entry point for a Naive VLM for taxonomic classification.
 
-Builds the `NaiveVLModel` class using a pre-trained VLM model from OpenAI's GPT-4o.
+Builds the `NaiveVLModel` class using a pre-trained VLM model available on OpenAI and OpenRouter.
 
 This script runs the model on living arthropods dataset and
 extracts taxonomic predictions as well as evaluation of performance.
 
 Classes:
 --------
-NaiveVLModel: A class for taxonomic classification using GPT-4o.
+NaiveVLModel: A class for taxonomic classification using an Open Source Model.
 
 Functions:
 --------
@@ -27,8 +27,8 @@ import argparse
 import asyncio
 import datetime
 
-from taxonomic_rag_system.core.living_arthropod_image_rag import NaiveVLModel
-from taxonomic_rag_system.utils.living_arthropods_helpers import (
+from taxonomic_rag_system.core.image_caption import NaiveVLModel
+from taxonomic_rag_system.utils.helpers import (
     extract_tax_metrics,
     write_overall_metrics,
     write_preds_to_csv,
@@ -82,7 +82,7 @@ async def main() -> None:
     write = args.write
 
     # 1. Build Model
-    naive_model = NaiveVLModel(model="google/gemini-2.0-flash-001", openrouter=True)
+    naive_model = NaiveVLModel(model="gpt-4o", openrouter=False)
     
     # 2. Living Arthropods Run
     rarespp_predictions = await naive_model.livingarthropods_dataset_run(verbose=2)
@@ -95,11 +95,11 @@ async def main() -> None:
         current_time = datetime.datetime.now().strftime("%H-%M-%S")  # Grab current time
         final_metrics_csv_name = str(
             output_path
-            + f"LA_naiveVLM_gemini240_tax_metrics_{current_date}_{current_time}.csv"
+            + f"LA_naiveVLM_gpt_tax_metrics_{current_date}_{current_time}.csv"
         )
         predictions_csv_name = str(
             output_path
-            + f"LA_naiveVLM_gemini240_predictions_{current_date}_{current_time}.csv"
+            + f"LA_naiveVLM_gpt_predictions_{current_date}_{current_time}.csv"
         )
         write_preds_to_csv(preds, predictions_csv_name)
         write_overall_metrics(final_metrics_csv_name, overalls)

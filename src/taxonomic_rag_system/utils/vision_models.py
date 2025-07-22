@@ -75,6 +75,7 @@ class VLM:
 
 
 class InstructorVLModel(VLM):
+    
     """
     A base class for vision-language models with instructor.
 
@@ -183,6 +184,7 @@ class TaxClassifierVLM(VLM):
                 "Genus": "N/A",
                 "Species": "N/A",
             }
+    
 
     async def _taxonomist(self, image_b64: str) -> dict[str, str]:
         """
@@ -198,6 +200,7 @@ class TaxClassifierVLM(VLM):
         -------
             A dictionary containing the taxonomic classification.
         """
+        
         raw_resp = await self.cap.chat.completions.create(
             model=self.model,
             temperature=self.temp,
@@ -236,8 +239,6 @@ class TaxClassifierVLM(VLM):
         tax = Tax.model_validate(parsed_data)
         assert isinstance(tax, Tax)
         return {key: val for key, val in tax.classification.items() if key != "Domain"}
-
-
 class DescriptiveCaptioner(InstructorVLModel):
     """
     A model for generating detailed captions for images of organisms.
@@ -263,6 +264,7 @@ class DescriptiveCaptioner(InstructorVLModel):
         if cap is None:
             cap = AsyncOpenAI()
         super().__init__(cap, model, temp)
+        
         self.system_prompt = (
             """
         You are an expert AI vision assistant to a taxonomist that describes animals in images.
@@ -311,6 +313,7 @@ class DescriptiveCaptioner(InstructorVLModel):
             print(f"Error during caption generation: {e}")
             return ""
 
+
     async def _caption(self, image_b64: str) -> str:
         """
         Process image with VLM to generate captions.
@@ -322,6 +325,7 @@ class DescriptiveCaptioner(InstructorVLModel):
         -------
             A string caption containing the detailed description of image features.
         """
+        
         raw_resp = await self.client.chat.completions.create(
             model=self.model,
             temperature=self.temp,

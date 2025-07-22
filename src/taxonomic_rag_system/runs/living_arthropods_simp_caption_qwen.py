@@ -39,10 +39,10 @@ import argparse
 import asyncio
 import datetime
 
-from taxonomic_rag_system.core.image_caption import ImageRAGModel
+from taxonomic_rag_system.core.image_caption import ImageCaptionModel
 
 # Local imports
-from taxonomic_rag_system.utils.helpers import (
+from taxonomic_rag_system.utils.living_arthropods_helpers import (
     extract_tax_metrics_rs,
     write_overall_metrics,
     write_preds_to_csv,
@@ -98,9 +98,9 @@ async def main() -> None:
     output_path = args.output
 
     # 1. Build Model, 2. RareSpecies Run, 3. Extract Results
-    model = ImageRAGModel(model="qwen/qwen2.5-vl-72b-instruct:free", use_openrouter=True)
+    model = ImageCaptionModel(model="qwen/qwen2.5-vl-72b-instruct:free", use_openrouter=True)
     #print(f"Device: {model.get_device()}")
-    rarespp_predictions = await model.rarespecies_dataset_run(verbose=2)
+    rarespp_predictions = await model.livingarthropods_dataset_run(verbose=2)
     overalls, preds = extract_tax_metrics_rs(rarespp_predictions, verbose=True)
 
     if write:

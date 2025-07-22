@@ -351,6 +351,15 @@ class DescriptiveCaptioner(InstructorVLModel):
         """
             + "..." * 256
         )
+    @backoff.on_exception(
+        backoff.expo,
+        RateLimitError,
+        max_tries=5,
+        base=60,      # Start with 1 minute waits
+        max_value=300, # Cap at 5 minutes
+        jitter=backoff.full_jitter
+    )
+
 
     async def generate_caption(self, image_b64: str) -> str:
         """

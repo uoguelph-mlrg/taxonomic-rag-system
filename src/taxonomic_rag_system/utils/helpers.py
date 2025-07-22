@@ -598,11 +598,11 @@ def extract_tax_metrics_rs(
     result_obj: List[Dict[str, Any]], verbose: bool = True
 ) -> Tuple[Dict[str, Dict[str, Union[float, int]]], List[Dict[str, str]]]:
     """
-    Extract taxonomic metrics and enrich guess class dictionaries with RSID information.
+    Extract taxonomic metrics and enrich guess class dictionaries with id information.
 
     Args:
         result_obj (list of dict): A list of dictionaries where each dictionary contains
-            the keys "true_class", "guess_class", and "RSID".
+            the keys "true_class", "guess_class", and "id".
 
     Returns
     -------
@@ -610,15 +610,15 @@ def extract_tax_metrics_rs(
             - class_report (dict): A classification report generated from the true and
               guessed classes.
             - guess_classes (list of dict): A list of guess class dictionaries, each
-              enriched with an "RSID" key.
+              enriched with an "id" key.
     """
     true_classes = [out_dict["true_class"] for out_dict in result_obj]
     guess_classes = [out_dict["guess_class"] for out_dict in result_obj]
     class_report = classify_report(true_classes, guess_classes, verbose=verbose)
-    rsids = [out_dict["RSID"] for out_dict in result_obj]
-    # Add RSID to each guess_class dictionary
-    for guess_class, rsid in zip(guess_classes, rsids):
-        guess_class["RSID"] = rsid
+    rsids = [out_dict["id"] for out_dict in result_obj]
+    # Add id to each guess_class dictionary
+    for guess_class, id in zip(guess_classes, rsids):
+        guess_class["id"] = id
     return class_report, guess_classes
 
 
@@ -632,7 +632,7 @@ def write_preds_to_csv(guess_classes: List[Dict[str, str]], csv_filename: str) -
 
     Args:
         guess_classes (list of dict): A list of dictionaries where each dictionary
-            contains prediction data with keys "RSID", "Kingdom", "Phylum",
+            contains prediction data with keys "id", "Kingdom", "Phylum",
             "Class", "Order", "Family", "Genus", and "Species".
         csv_filename (str): The path to the CSV file where the data will be written.
 
@@ -647,7 +647,7 @@ def write_preds_to_csv(guess_classes: List[Dict[str, str]], csv_filename: str) -
         if file.tell() == 0:
             writer.writerow(
                 [
-                    "RSID",
+                    "id",
                     "Kingdom",
                     "Phylum",
                     "Class",
@@ -660,7 +660,7 @@ def write_preds_to_csv(guess_classes: List[Dict[str, str]], csv_filename: str) -
 
         for guess in guess_classes:
             row = [
-                guess.get("RSID", ""),
+                guess.get("id", ""),
                 guess.get("Kingdom", ""),
                 guess.get("Phylum", ""),
                 guess.get("Class", ""),

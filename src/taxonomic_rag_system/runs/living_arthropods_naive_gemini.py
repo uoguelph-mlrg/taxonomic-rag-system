@@ -85,7 +85,7 @@ async def main() -> None:
 
     # 1. Build Model, 2. Living Arthropod Run, 3. Extract Results
     naive_model = NaiveVLModel(model="google/gemini-2.0-flash-001")
-    rarespp_predictions = await naive_model.rarespecies_dataset_run(verbose=2)
+    rarespp_predictions = await naive_model.livingarthropods_dataset_run(verbose=2)
     overalls, preds = extract_tax_metrics(rarespp_predictions, verbose=True)
 
     if write:
@@ -93,7 +93,7 @@ async def main() -> None:
         current_time = datetime.datetime.now().strftime("%H-%M-%S")  # Grab current time
         final_metrics_csv_name = str(
             output_path
-            + f"LS_naiveVLM_gemini_tax_metrics_{current_date}_{current_time}.csv"
+            + f"LA_naiveVLM_gemini_tax_metrics_{current_date}_{current_time}.csv"
         )
         predictions_csv_name = str(
             output_path
