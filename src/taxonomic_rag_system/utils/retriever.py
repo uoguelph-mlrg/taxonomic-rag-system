@@ -6,6 +6,7 @@ It includes classes for constructing RAG chains, retrieving documents, and
 generating taxonomic classifications based on captions and contextual information.
 
 Classes:
+    SafeHuggingFaceEmbeddings: A custom safety wrapper for HuggingFaceEmbeddings
     RAGChainBuilder: Build and manage a Taxonomic RAG chain for
         taxonomic classification tasks.
     BaseRetriever: Base class for document retrieval using a Chroma collection.
@@ -14,17 +15,16 @@ Classes:
 
 Dependencies:
     - torch
-    - pathlib
     - langchain
     - langchain_community
     - langchain_core
     - langchain_openai
-    - taxonomic_rag_system.utils.base_models
+    - taxonomic_rag_system.utils.out_models
     - taxonomic_rag_system.utils.helpers
 """
 
 import logging
-from typing import Any
+from typing import Any, Union, overload
 
 import torch
 from langchain.output_parsers import PydanticOutputParser
@@ -48,7 +48,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-class SafeHuggingFaceEmbeddings:
+class SafeHuggingFaceEmbeddings(HuggingFaceEmbeddings):
     """
     A safe wrapper around HuggingFaceEmbeddings that ensures all inputs are strings.
 
@@ -56,12 +56,18 @@ class SafeHuggingFaceEmbeddings:
     any non-string inputs to strings before passing them to the underlying embeddings.
     """
 
-    def __init__(self, **kwargs):
-        self.embeddings = HuggingFaceEmbeddings(**kwargs)
+    @overload
+    def embed_documents(self, texts: list[str]) -> list[list[float]]: ...
 
-    def embed_documents(self, texts):
+    @overload
+    def embed_documents(self, texts: list[dict[str, str]]) -> list[list[float]]: ...
+
+    @overload
+    def embed_documents(self, texts: list[Any]) -> list[list[float]]: ...
+
+    def embed_documents(self, texts: list[Any]) -> list[list[float]]:
         """Safely embed documents by ensuring all inputs are strings."""
-        safe_texts = []
+        safe_texts: list[str] = []
         for text in texts:
             if isinstance(text, str):
                 safe_texts.append(text)
@@ -69,9 +75,15 @@ class SafeHuggingFaceEmbeddings:
                 safe_texts.append(str(text))
             else:
                 safe_texts.append(str(text))
-        return self.embeddings.embed_documents(safe_texts)
+        return super().embed_documents(safe_texts)
 
-    def embed_query(self, text):
+    @overload
+    def embed_query(self, text: str) -> list[float]: ...
+
+    @overload
+    def embed_query(self, text: dict[str, str]) -> list[float]: ...
+
+    def embed_query(self, text: Union[str, dict[str, str]]) -> list[float]:
         """Safely embed a query by ensuring the input is a string."""
         if isinstance(text, str):
             safe_text = text
@@ -79,11 +91,7 @@ class SafeHuggingFaceEmbeddings:
             safe_text = str(text)
         else:
             safe_text = str(text)
-        return self.embeddings.embed_query(safe_text)
-
-    def __getattr__(self, name):
-        """Delegate all other attributes to the underlying embeddings."""
-        return getattr(self.embeddings, name)
+        return super().embed_query(safe_text)
 
 
 class RAGChainBuilder:
@@ -94,7 +102,7 @@ class RAGChainBuilder:
     and taxonomic classification generation based on a caption and additional context.
     """
 
-    def __init__(self, retriever: Any):
+    def __init__(self, retriever: Any) -> None:
         """
         Initialize RAGChainBuilder with a retriever.
 
@@ -208,7 +216,6 @@ class RAGChainBuilder:
                 commentary="Error occurred during processing",
                 bio_knowledge="Error occurred during processing",
             )
-        # return await self.rag_chain.ainvoke(input=inp)
 
 
 class BaseRetriever:
@@ -220,7 +227,7 @@ class BaseRetriever:
         embedding_model: str,
         search_type: str,
         k: int,
-    ):
+    ) -> None:
         """
         Initialize a BaseRetriever for document retrieval with additional params.
 
@@ -248,7 +255,7 @@ class WikiStellaRAGModel(BaseRetriever):
         k: int = 30,
         rerank: bool = False,
         multiquery: bool = False,
-    ):
+    ) -> None:
         """
         Initialize WikiStellaRAGModel with config options for multiquery and reranker.
 

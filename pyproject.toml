@@ -37,21 +37,20 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [[tool.uv.index]]
-name = "pytorch-cu118"  
+name = "pytorch-cu118"
 url = "https://download.pytorch.org/whl/cu118"
 explicit = true
 
 # designate sources for torch and torchvision
 [tool.uv.sources]
 torch = [
-    { index = "pytorch-cpu", extra = "cpu" }, 
-    { index = "pytorch-cu118", extra = "gpu" }  
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu118", extra = "gpu" }
 ]
 torchvision = [
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-cu118", extra = "gpu" }
 ]
-# Pillow will get the latest version from the default PyPI
 
 # use unsafe-best-match to solve dependency conflicts
 [tool.uv]
@@ -89,10 +88,6 @@ docs = [
     "ipykernel>=6.29.5",
     "ipython>=8.31.0",
 ]
-
-# Default dependency groups to be installed
-#[tool.uv]
-#default-groups = ["dev", "docs"]
 
 [tool.mypy]
 mypy_path = "src"
