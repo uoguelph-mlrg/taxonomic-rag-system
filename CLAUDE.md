@@ -11,6 +11,7 @@ This repository contains the implementation of experiments presented in [Taxonom
 ## Development Setup
 
 ### Environment Setup
+
 ```bash
 # Install dependencies (requires uv to be installed)
 uv sync --dev
@@ -22,7 +23,9 @@ source .venv/bin/activate
 ```
 
 ### API Keys Setup
+
 The system requires API keys stored in your home directory:
+
 ```bash
 # Required API key files in home directory
 ~/.openai.key      # OpenAI API key
@@ -33,6 +36,7 @@ The system requires API keys stored in your home directory:
 **⚠️ Important**: API keys should never be checked into version control. These files should remain in your local home directory only.
 
 ### Running Tests
+
 ```bash
 # Unit tests (excludes integration tests)
 uv run pytest -m "not integration_test" --cov src/taxonomic_rag_system --cov-report=xml tests
@@ -48,6 +52,7 @@ uv run pytest tests/taxonomic_rag_system/test_image_rag.py
 ```
 
 ### Code Quality Checks
+
 ```bash
 # Run all pre-commit hooks
 pre-commit run --all-files
@@ -107,6 +112,7 @@ uv run mypy src/                       # Type checking
 **⚠️ Cost Warning**: Experiments involve API calls to OpenAI, OpenRouter, and Cohere services which incur costs. Do not launch non-trivial experiments without budget approval.
 
 #### Preprocessing Documents
+
 ```bash
 # Chunk, contextualize and vectorize documents
 python src/taxonomic_rag_system/preprocess/chunk_vectorize.py \
@@ -116,6 +122,7 @@ python src/taxonomic_rag_system/preprocess/chunk_vectorize.py \
 ```
 
 #### Rare Species Classification Experiments
+
 ```bash
 # Simple RAG model
 python src/taxonomic_rag_system/runs/rare_species_simp_rag.py \
@@ -150,12 +157,14 @@ python src/taxonomic_rag_system/runs/rare_species_naive_gemini.py \
 ### Output Formats
 
 Experiment results are saved as CSV files with timestamped filenames:
+
 - `RS_<model>_predictions_<date>_<time>.csv`: Individual predictions
 - `RS_<model>_tax_metrics_<date>_<time>.csv`: Taxonomic classification metrics
 
 ### API Integration Patterns
 
 The system integrates with multiple AI service providers:
+
 - **OpenAI**: Primary VLM and LLM provider
 - **OpenRouter**: Alternative model access
 - **Cohere**: Document reranking services
