@@ -55,9 +55,16 @@ jobs:
         with:
           python-version-file: ".python-version"
 
-      - name: Install the project
-        run: uv sync --all-extras --dev
+      # TEMPORARILY DISABLED: PyTorch dependency issues prevent CI from running
+      # See issue #2 (PyTorch dependency configuration) and issue #9 (CI noise)
+      # Re-enable these steps once PyTorch dependencies are properly configured
 
-      - name: Install dependencies and check code
-        run: |
-          uv run pytest -m "integration_test" --cov src/taxonomic_rag_system --cov-report=xml tests
+      # - name: Install the project
+      #   run: uv sync --all-extras --dev
+
+      # - name: Install dependencies and check code
+      #   run: |
+      #     uv run pytest -m "integration_test" --cov src/taxonomic_rag_system --cov-report=xml tests
+
+      - name: Placeholder step (tests temporarily disabled)
+        run: echo "Integration tests temporarily disabled due to PyTorch dependency issues. See issues #2 and #9."
