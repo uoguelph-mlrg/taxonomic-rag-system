@@ -380,7 +380,7 @@ class DescriptiveCaptioner(VLM):
         # Parse the JSON string to a Python dictionary
         parsed_data = json.loads(json_content)
 
-        # Manually parse the response to a Tax object
+        # Manually parse the response to a Caption object
         cap = Caption.model_validate(parsed_data)
         assert isinstance(cap, Caption)
         return cap.caption
