@@ -141,8 +141,8 @@ python src/taxonomic_rag_system/runs/rare_species_naive_gemini.py \
 ### Testing Strategy
 
 - **Unit Tests**: Mock external APIs and test individual components in isolation
-- **Integration Tests**: Test full pipeline with real API calls (marked with `@pytest.mark.integration_test`)
-- **Fixtures**: Comprehensive mock fixtures in `tests/conftest.py` for consistent testing
+- **Integration Tests**: Test pipeline components together (marked with `@pytest.mark.integration_test`)
+- **Fixtures**: Mock fixtures in `tests/conftest.py` for consistent testing
 
 ### Code Style and Standards
 
