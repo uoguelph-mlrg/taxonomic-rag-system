@@ -103,7 +103,6 @@ uv run mypy src/                       # Type checking
 - **[Cohere](https://cohere.com)**: Document reranking
 - **[Hugging Face](https://huggingface.co)**: Stella embeddings for document vectorization
 - **[PyTorch](https://pytorch.org)**: Deep learning operations
-- **[Instructor](https://useinstructor.com)**: Structured output parsing from LLMs
 
 ## Common Development Tasks
 
