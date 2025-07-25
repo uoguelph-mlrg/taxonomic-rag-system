@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:langchain.com)",
+      "WebFetch(domain:www.trychroma.com)",
+      "WebFetch(domain:openai.com)",
+      "WebFetch(domain:openrouter.ai)",
+      "WebFetch(domain:cohere.com)",
+      "WebFetch(domain:huggingface.co)",
+      "WebFetch(domain:pytorch.org)",
+      "WebFetch(domain:useinstructor.com)",
+      "WebFetch(domain:arxiv.org)"
+    ],
+    "deny": []
+  }
+}
