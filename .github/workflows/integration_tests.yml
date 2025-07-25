@@ -67,4 +67,4 @@ jobs:
       #     uv run pytest -m "integration_test" --cov src/taxonomic_rag_system --cov-report=xml tests
 
       - name: Placeholder step (tests temporarily disabled)
-        run: echo "Integration tests temporarily disabled due to PyTorch dependency issues. See issues #2 and #9."
+        run: echo 'Integration tests temporarily disabled due to PyTorch dependency issues. See issues #2 and #9.'
