@@ -467,7 +467,7 @@ class KScopeTaxClassifierVLM(KScopeVLModel):
         RateLimitError,
         max_tries=3,
     )
-    async def generate_classification(self, image_b64):
+    async def generate_classification(self, image_b64: str):
         """
         Process image with VLM for taxonomic classification.
 
@@ -561,7 +561,7 @@ class KScopeUQModel(KScopeVLModel):
         RateLimitError,
         max_tries=3,
     )
-    async def generate_logprobs(self, llm_output: str):
+    async def generate_logprobs(self, llm_output: str) -> np.ndarray:
         """
         Process LLM output with KScope UQ logprobs adapter.
 
