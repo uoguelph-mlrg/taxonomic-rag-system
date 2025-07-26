@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any
 
 import backoff
+import numpy as np
 from openai import AsyncOpenAI, RateLimitError
 
 # Local imports
@@ -52,6 +53,8 @@ from taxonomic_rag_system.utils.out_models import Caption, Tax
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
+
+TOKEN_PADDING_LENGTH = 256
 
 
 def load_api_keys() -> None:
@@ -146,7 +149,7 @@ class TaxClassifierVLM(VLM):
             }
             }
             """
-            + "..." * 256
+            + "..." * TOKEN_PADDING_LENGTH
         )
 
     async def generate_taxonomy(self, image_b64: str) -> dict[str, str]:
@@ -310,7 +313,7 @@ class DescriptiveCaptioner(VLM):
         {Caption.model_json_schema()}
         </format_instructions>
         """
-            + "..." * 256
+            + "..." * TOKEN_PADDING_LENGTH
         )
 
     async def generate_caption(self, image_b64: str) -> str:
@@ -459,7 +462,7 @@ class KScopeTaxClassifierVLM(KScopeVLModel):
             }
             }
             """
-            + "..." * 256
+            + "..." * TOKEN_PADDING_LENGTH
         )
 
     @backoff.on_exception(
@@ -553,7 +556,7 @@ class KScopeUQModel(KScopeVLModel):
 
             Your task is to identify language that indicates certainty, uncertainty, confidence or any other indicating language that would assist in assessing prediction-level uncertainty quantification.
             """
-            + "..." * 256
+            + "..." * TOKEN_PADDING_LENGTH
         )
 
     @backoff.on_exception(
@@ -656,7 +659,7 @@ class DescriptiveKaptioner(KScopeVLModel):
         {Caption.model_json_schema()}
         </format_instructions>
         """
-            + "..." * 256
+            + "..." * TOKEN_PADDING_LENGTH
         )
 
     async def generate_caption(self, image_b64: str) -> str:
