@@ -25,6 +25,11 @@ Dependencies:
 - `mocker` for mocking external dependencies in tests.
 """
 
+import os
+import tempfile
+from unittest.mock import MagicMock, mock_open, patch
+
+import pandas as pd
 import pytest
 from langchain.schema import Document
 from PIL import Image
@@ -34,23 +39,190 @@ from taxonomic_rag_system.utils.helpers import (
     clean_string_output,
     custom_collate_fn,
     dict_match,
+    extract_tax_metrics,
+    extract_tax_metrics_rs,
     format_context,
     format_docs,
     get_metrics,
     imgfile_tob64,
     imgurl_tob64,
+    load_api_keys,
     pilimg_tob64,
+    rag_evaluate,
     simple_string_output,
     unique_docs,
+    write_overall_metrics,
+    write_preds_to_csv,
 )
+
+
+def test_load_api_keys_success():
+    """Test successful API key loading."""
+    with patch(
+        "builtins.open",
+        mock_open(read_data="test_key"),
+        patch.dict(os.environ, {}, clear=True),
+    ):
+        load_api_keys()
+        assert os.environ["OPENAI_API_KEY"] == "test_key"
+
+
+def test_load_api_keys_missing_openai():
+    """Test error when OpenAI key is missing."""
+    with (
+        patch(target="builtins.open", side_effect=FileNotFoundError),
+        pytest.raises(
+            expected_exception=FileNotFoundError, match="Could not find OpenAI API key"
+        ),
+    ):
+        load_api_keys()
+
+
+def test_write_overall_metrics():
+    """Test writing metrics to CSV."""
+    test_data = {
+        "Kingdom": {"accuracy": 0.95, "f1": 0.93},
+        "Phylum": {"accuracy": 0.87, "f1": 0.85},
+    }
+    # Create a temporary file for writing CSV
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
+        csv_filename = f.name
+
+    try:
+        write_overall_metrics(csv_filename, test_data)
+
+        # Verify file contents
+        with open(csv_filename, "r") as f:
+            content = f.read()
+            assert "Rank,Accuracy,F1" in content
+            assert "Kingdom,0.95,0.93" in content
+            assert "Phylum,0.87,0.85" in content
+    finally:  # Ensure temp file is deleted
+        os.unlink(csv_filename)
+
+
+def test_extract_tax_metrics():
+    """Test extracting taxonomic metrics from results."""
+    result_obj = [
+        {
+            "true_class": {"Kingdom": "Animalia", "Phylum": "Chordata"},
+            "guess_class": {"Kingdom": "Animalia", "Phylum": "Chordata"},
+        },
+        {
+            "true_class": {"Kingdom": "Plantae", "Phylum": "Tracheophyta"},
+            "guess_class": {"Kingdom": "Plantae", "Phylum": "Magnoliophyta"},
+        },
+    ]
+
+    class_report, guess_classes = extract_tax_metrics(result_obj, verbose=False)
+
+    assert "Kingdom" in class_report
+    assert "Phylum" in class_report
+    assert len(guess_classes) == 2
+    assert guess_classes[0]["Kingdom"] == "Animalia"
+    assert class_report["Kingdom"]["Count"] == 2.0
+    assert class_report["Kingdom"]["accuracy"] == 1.0
+
+
+def test_extract_tax_metrics_rs():
+    """Test extracting taxonomic metrics with RSID enrichment."""
+    result_obj = [
+        {
+            "true_class": {"Kingdom": "Animalia"},
+            "guess_class": {"Kingdom": "Animalia"},
+            "RSID": "RS001",
+        }
+    ]
+
+    class_report, guess_classes = extract_tax_metrics_rs(result_obj, verbose=False)
+
+    assert len(guess_classes) == 1
+    assert guess_classes[0]["RSID"] == "RS001"
+    assert guess_classes[0]["Kingdom"] == "Animalia"
+    assert class_report["Kingdom"]["Count"] == 1.0
+
+
+def test_write_preds_to_csv():
+    """Test writing predictions to CSV."""
+    guess_classes = [
+        {
+            "RSID": "RS001",
+            "Kingdom": "Animalia",
+            "Phylum": "Chordata",
+            "Class": "Mammalia",
+            "Order": "Primates",
+            "Family": "Hominidae",
+            "Genus": "Homo",
+            "Species": "Homo sapiens",
+        }
+    ]
+
+    # Create temp file to mock writing to csv
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
+        csv_filename = f.name
+
+    try:
+        write_preds_to_csv(guess_classes, csv_filename)
+
+        # Verify file contents
+        with open(csv_filename, "r") as f:
+            content = f.read()
+            assert "RSID,Kingdom,Phylum,Class,Order,Family,Genus,Species" in content
+            assert (
+                "RS001,Animalia,Chordata,Mammalia,Primates,Hominidae,Homo,Homo sapiens"
+                in content
+            )
+    finally:  # Ensure temp file is deleted
+        os.unlink(csv_filename)
+
+
+@pytest.mark.asyncio
+async def test_rag_evaluate():
+    """Test RAG evaluation functionality."""
+    eval_dict = {
+        "caption": "Test caption",
+        "context": ["Test context"],
+        "guess_class": {"Kingdom": "Animalia"},
+        "ancestral": "Test ancestral",
+        "specific": "Test specific",
+        "commentary": "Test commentary",
+        "biodiversity": "Test biodiversity",
+    }
+
+    mock_embeddings = MagicMock()
+
+    # Mock the scoring results
+    with (
+        patch("taxonomic_rag_system.utils.helpers.Faithfulness") as mock_faith,
+        patch("taxonomic_rag_system.utils.helpers.ResponseRelevancy") as mock_relevancy,
+    ):
+        mock_faith_instance = MagicMock()
+        mock_relevancy_instance = MagicMock()
+        mock_faith.return_value = mock_faith_instance
+        mock_relevancy.return_value = mock_relevancy_instance
+
+        mock_faith_instance.single_turn_ascore.return_value = 0.85
+        mock_relevancy_instance.single_turn_ascore.return_value = 0.90
+
+        result = await rag_evaluate(eval_dict, mock_embeddings)
+
+        assert isinstance(result, pd.DataFrame)
+        assert result["faithfulness"].iloc[0] == 0.85
+        assert result["response_relevancy"].iloc[0] == 0.90
 
 
 @pytest.fixture
 def mock_docs():
     """Fixture to create mock documents for testing."""
     return [
-        Document(page_content="Content 1", metadata={"source": "doc1"}),
-        Document(page_content="Content 2", metadata={"source": "doc2"}),
+        Document(
+            page_content="Content 1",
+            metadata={"source": "doc1", "relevancy_score": 0.9},
+        ),
+        Document(
+            page_content="Content 2",
+            metadata={"source": "doc2", "relevancy_score": 0.5},
+        ),
     ]
 
 
@@ -72,7 +244,7 @@ def test_format_docs(mock_docs):
 
 def test_unique_docs(mock_docs):
     """Test filtering out duplicate documents."""
-    docs = [mock_docs[0], mock_docs[0]]
+    docs = [[mock_docs[0], mock_docs[0]]]
     result = unique_docs(docs)
     assert len(result) == 1
     assert result[0].page_content == "Content 1"
@@ -128,6 +300,8 @@ def test_imgfile_tob64(tmp_path):
     image.save(image_path)
     result = imgfile_tob64(str(image_path))
     assert isinstance(result, str)
+    # Delete temp file
+    os.remove(image_path)
 
 
 def test_pilimg_tob64():
@@ -139,9 +313,9 @@ def test_pilimg_tob64():
 
 def test_get_metrics():
     """Test computing evaluation metrics."""
-    y_trues = ["A", "B", "C"]
-    y_preds = ["A", "B", "C"]
-    result = get_metrics(y_trues, y_preds, "TestLevel", 3)
+    y_trues = ["Mammalia", "Mammalia"]
+    y_preds = ["Mammalia", "Mammalia"]
+    result = get_metrics(y_trues, y_preds, "Order")
     assert result["accuracy"] == 1.0
     assert result["f1"] == 1.0
 
@@ -160,7 +334,7 @@ def test_classify_report():
     true_dicts = [{"A": "1"}, {"B": "2"}]
     pred_dicts = [{"A": "1"}, {"B": "3"}]
     report = classify_report(true_dicts, pred_dicts)
-    assert "accuracy" in report
+    assert "accuracy" in report["A"]
 
 
 def test_custom_collate_fn():
@@ -169,3 +343,4 @@ def test_custom_collate_fn():
     result = custom_collate_fn(batch)
     assert len(result[0]) == 2
     assert len(result[1]) == 2
+    assert result[1][0]["label"] == "A"
