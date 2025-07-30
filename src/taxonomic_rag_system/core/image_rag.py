@@ -432,7 +432,8 @@ class NaiveVLModel:
                 - "guess_class": A dict of predicted taxonomy levels.
                 - "RSID": The unique identifier for the rare species.
         """
-        dataloader = RareSpeciesEvaluator().dataloader()
+        # dataloader = RareSpeciesEvaluator().dataloader()
+        dataloader = RareSpeciesEvaluator(interval=(0, 100)).dataloader()
         # Processing loop for batch of images
         outputs = []
         for image_objs, class_dicts in dataloader:
