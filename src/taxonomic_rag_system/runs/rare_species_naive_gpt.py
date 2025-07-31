@@ -57,6 +57,18 @@ def _parse_arguments() -> argparse.Namespace:
         default="",
         help="Path where contextualized documents will be saved.",
     )
+    parser.add_argument(
+        "--interval-start",
+        type=int,
+        default=0,
+        help="Start index in rare-species dataset (default: 0)",
+    )
+    parser.add_argument(
+        "--interval-end",
+        type=int,
+        default=999,
+        help="End index in rare-species dataset (default: 999)",
+    )
 
     return parser.parse_args()
 
@@ -81,11 +93,12 @@ async def main() -> None:
     args = _parse_arguments()
     output_path = args.output_path
     write = args.write
+    interval = (args.interval_start, args.interval_end)
 
     # 1. Build Model
     naive_model = NaiveVLModel(model="gpt-4o", openrouter=False)
     # 2. RareSpecies Run
-    rarespp_predictions = await naive_model.rarespecies_dataset_run(verbose=2)
+    rarespp_predictions = await naive_model.rarespecies_dataset_run(interval=interval, verbose=2)
     # 3. Extract Results
     overalls, preds = extract_tax_metrics(rarespp_predictions, verbose=True)
 

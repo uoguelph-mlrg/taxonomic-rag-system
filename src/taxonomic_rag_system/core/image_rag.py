@@ -242,11 +242,13 @@ class ImageRAGModel:
         )
         return await self.captioner.generate_caption(image_b64)
 
-    async def rarespecies_dataset_run(self, verbose: int = 1) -> list[dict[str, Any]]:
+    async def rarespecies_dataset_run(self, interval: tuple[int, int] = (0, 999), verbose: int = 1) -> list[dict[str, Any]]:
         """
         Asynchronously processes a dataset of rare species images using a RAG system.
 
         Args:
+            interval (tuple[int, int], optional): The range of indices to process from the dataset.
+                Defaults to (0, 999).
             verbose (int, optional): Verbosity level for logging and debugging.
                 - 0: No output.
                 - 1: Minimal output (default).
@@ -273,7 +275,7 @@ class ImageRAGModel:
             - Taxonomy levels - "Phylum", "Class", "Order", "Family", "Genus", "Species"
             - Verbose levels >1 provide detailed logging for debugging purposes.
         """
-        dataloader = RareSpeciesEvaluator().dataloader()
+        dataloader = RareSpeciesEvaluator(interval=interval).dataloader()
         # Processing loop for batch of images
         outputs = []
         for image_objs, class_dicts in dataloader:
@@ -416,12 +418,14 @@ class NaiveVLModel:
         return guess_class
 
     async def rarespecies_dataset_run(
-        self, verbose: int = 1
+        self, interval: tuple[int, int] = (0, 999), verbose: int = 1
     ) -> list[dict[str, Union[str, dict[str, Union[str, Any]]]]]:
         """
         Pass over the rare-species dataset.
 
         Args:
+            interval (tuple[int, int], optional): The range of indices to process from the dataset.
+                Defaults to (0, 999).
             verbose (int, optional): Verbosity level for logging. Defaults to 1.
                 - If `verbose > 1`, detailed taxonomy level comparisons will be printed.
 
@@ -432,7 +436,7 @@ class NaiveVLModel:
                 - "guess_class": A dict of predicted taxonomy levels.
                 - "RSID": The unique identifier for the rare species.
         """
-        dataloader = RareSpeciesEvaluator().dataloader()
+        dataloader = RareSpeciesEvaluator(interval=interval).dataloader()
         # Processing loop for batch of images
         outputs = []
         for image_objs, class_dicts in dataloader:
