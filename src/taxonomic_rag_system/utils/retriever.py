@@ -37,6 +37,8 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableSerializable
 from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_openai import ChatOpenAI
+import json  # For saving prompt/response pairs
+from pathlib import Path  # Handle log file paths
 
 # Local imports
 from taxonomic_rag_system.utils.helpers import format_docs, load_api_keys, unique_docs
@@ -102,11 +104,12 @@ class RAGChainBuilder:
     and taxonomic classification generation based on a caption and additional context.
     """
 
-    def __init__(self, retriever: Any) -> None:
+    def __init__(self, retriever: Any, log_path: str | None = None) -> None:
         """
         Initialize RAGChainBuilder with a retriever.
 
         :param retriever: The document retriever to use.
+        :param log_path: Optional path to save prompt/response pairs in JSONL format.
         """
         self.llm = ChatOpenAI(model="gpt-4o")
         self.output_parser = PydanticOutputParser(pydantic_object=TaxBiodiversity)
@@ -141,7 +144,11 @@ class RAGChainBuilder:
         )
         self.prompt = self._prompt_construction()
         self.rag_chain = self._build_chain(retriever)
-
+        # Optional path to save prompt/response pairs in JSONL format, default to current working directory
+        self._log_path: str | None = str(log_path) if log_path is not None else str(Path.cwd() / "prompt_response_pairs.jsonl")
+        # Store retriever for possible prompt reconstruction/logging
+        self._retriever = retriever
+    
     def _prompt_construction(self) -> PromptTemplate:
         """
         Construct the prompt template required for taxonomic classification tasks.
@@ -178,7 +185,13 @@ class RAGChainBuilder:
         :param inp: The input data.
         :return: The output of the RAG chain.
         """
-        return self.rag_chain.invoke(input=inp)
+        # Prompt/Response logging 
+        prompt_str = self.prompt.format(**inp)
+        result = self.rag_chain.invoke(input=inp)
+        # Log prompt/response pair
+        self._log_pair(prompt_str, result)
+        # Return parsed result
+        return result
 
     async def ainvoke(self, inp: dict[str, Any]) -> TaxBiodiversity:
         """
@@ -189,7 +202,12 @@ class RAGChainBuilder:
         """
         try:
             print(f"RAGChainBuilder.ainvoke called with input keys: {list(inp.keys())}")
+            # Prompt/Response logging
+            prompt_str = self.prompt.format(**inp)
             result = await self.rag_chain.ainvoke(input=inp)
+            # Log prompt/response pair
+            self._log_pair(prompt_str, result)
+            # Return parsed result
             print("RAGChainBuilder.ainvoke completed successfully")
             return result
         except Exception as e:
@@ -216,7 +234,33 @@ class RAGChainBuilder:
                 commentary="Error occurred during processing",
                 bio_knowledge="Error occurred during processing",
             )
+    
+    def _log_pair(self, prompt: str, response: Any) -> None:
+        """Append a prompt/response pair to the configured JSONL log file (if any).
 
+        Each line in the file is a JSON object with keys ``prompt`` and ``response``.
+
+        The response is serialised as a dict via ``model_dump`` when the object comes
+        from a Pydantic model; otherwise ``str(response)`` is used.
+        """
+        if not getattr(self, "_log_path", None):
+            return  # Logging disabled
+
+        try:
+            # Ensure parent directory exists
+            Path(self._log_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+
+            if hasattr(response, "model_dump"):
+                resp_obj = response.model_dump()
+            else:
+                resp_obj = str(response)
+
+            with open(self._log_path, "a", encoding="utf-8") as fp:
+                json_line = json.dumps({"prompt": prompt, "response": resp_obj}, ensure_ascii=False)
+                fp.write(json_line + "\n")
+        except Exception as log_err:
+            # Do not crash the main pipeline for logging errors; just warn.
+            logger.warning(f"Failed to log prompt/response pair: {log_err}")
 
 class BaseRetriever:
     """Base class for document retriever against a Chroma collection."""
