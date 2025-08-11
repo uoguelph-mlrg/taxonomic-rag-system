@@ -604,6 +604,82 @@ def write_overall_metrics(csv_filename: str, data: Dict[str, Dict[str, float]]) 
                 writer.writerow([rank, metrics, ""])
 
 
+# Write rank-level attempts (Count) to CSV
+def write_rank_attempts_csv(
+    csv_filename: str, data: Dict[str, Dict[str, float]], total_samples: int
+) -> None:
+    """Write per-rank attempts with percentage to CSV.
+
+    Header: ["Rank", "Attempts (%)"]. Each cell shows "{count} ({percent})",
+    where percent is count/total_samples formatted as a percentage with no decimals,
+    e.g., "24 (100%)".
+    """
+    with open(csv_filename, mode="w", newline="") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Rank", "Attempts (%)"])
+        denom = max(int(total_samples), 0)
+        for rank, metrics in data.items():
+            count_val = metrics.get("Count", 0) if isinstance(metrics, dict) else 0
+            try:
+                count_int = int(count_val)
+            except Exception:
+                count_int = 0
+            if denom > 0:
+                ratio = count_int / denom
+                percent_str = format(ratio, ".0%")
+            else:
+                percent_str = "0%"
+            cell = f"{count_int} ({percent_str})"
+            writer.writerow([rank, cell])
+
+
+# Writer for per-sample BinaryAccuracy labels
+def write_sample_binary_accuracy_csv(
+    guess_classes: List[Dict[str, Any]], csv_filename: str
+) -> None:
+    """Write per-sample binary accuracy labels to CSV.
+
+    If RSID is present in the guess dictionaries, write columns [RSID, BinaryAccuracy].
+    Otherwise, write [Index, BinaryAccuracy] where Index is the sample index in the list.
+    """
+    with open(csv_filename, mode="w", newline="") as file:
+        writer = csv.writer(file)
+        has_rsid = any("RSID" in g for g in guess_classes)
+        if has_rsid:
+            writer.writerow(["RSID", "BinaryAccuracy"])
+            for g in guess_classes:
+                val = g.get("BinaryAccuracy", "")
+                val = "" if val is None else val
+                writer.writerow([g.get("RSID", ""), val])
+        else:
+            writer.writerow(["Index", "BinaryAccuracy"])
+            for i, g in enumerate(guess_classes):
+                val = g.get("BinaryAccuracy", "")
+                val = "" if val is None else val
+                writer.writerow([i, val])
+
+
+# Per-sample binary accuracy across all ranks, this function is applied to each sample
+def sample_binary_accuracy(true_class: Dict[str, str], pred_class: Dict[str, str]) -> Optional[int]:
+    """Compute binary accuracy for a single sample on predicted-only ranks.
+
+    Returns 1 if and only if every predicted rank that exists in the true_class
+    matches exactly. Returns 0 if any predicted rank mismatches. If no ranks are
+    predicted (i.e., model abstains completely), return None.
+    """
+    canonical_ranks = ["Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"]
+    predicted_ranks = [r for r in canonical_ranks if r in pred_class]
+    if len(predicted_ranks) == 0:
+        return None
+    for rank in predicted_ranks:
+        # If true lacks the rank, we treat it as not comparable; skip
+        if rank not in true_class:
+            continue
+        if pred_class[rank] != true_class[rank]:
+            return 0
+    return 1
+
+
 def extract_tax_metrics(
     result_obj: List[Dict[str, Any]], verbose: bool = True
 ) -> Tuple[Dict[str, Dict[str, Union[float, int]]], List[Dict[str, str]]]:
@@ -630,6 +706,12 @@ def extract_tax_metrics(
     true_classes = [out_dict["true_class"] for out_dict in result_obj]
     guess_classes = [out_dict["guess_class"] for out_dict in result_obj]
     class_report = classify_report(true_classes, guess_classes, verbose=verbose)
+    # Attach per-sample BinaryAccuracy
+    for true_class, guess_class in zip(true_classes, guess_classes):
+        try:
+            guess_class["BinaryAccuracy"] = sample_binary_accuracy(true_class, guess_class)
+        except Exception:
+            guess_class["BinaryAccuracy"] = 0
     return class_report, guess_classes
 
 
@@ -638,26 +720,18 @@ def extract_tax_metrics_rs(
 ) -> Tuple[Dict[str, Dict[str, Union[float, int]]], List[Dict[str, str]]]:
     """
     Extract taxonomic metrics and enrich guess class dictionaries with RSID information.
-
-    Args:
-        result_obj (list of dict): A list of dictionaries where each dictionary contains
-            the keys "true_class", "guess_class", and "RSID".
-
-    Returns
-    -------
-        tuple: A tuple containing:
-            - class_report (dict): A classification report generated from the true and
-              guessed classes.
-            - guess_classes (list of dict): A list of guess class dictionaries, each
-              enriched with an "RSID" key.
     """
     true_classes = [out_dict["true_class"] for out_dict in result_obj]
     guess_classes = [out_dict["guess_class"] for out_dict in result_obj]
     class_report = classify_report(true_classes, guess_classes, verbose=verbose)
     rsids = [out_dict["RSID"] for out_dict in result_obj]
-    # Add RSID to each guess_class dictionary
-    for guess_class, rsid in zip(guess_classes, rsids):
+    # Add RSID and BinaryAccuracy to each guess_class dictionary
+    for true_class, guess_class, rsid in zip(true_classes, guess_classes, rsids):
         guess_class["RSID"] = rsid
+        try:
+            guess_class["BinaryAccuracy"] = sample_binary_accuracy(true_class, guess_class)
+        except Exception:
+            guess_class["BinaryAccuracy"] = 0
     return class_report, guess_classes
 
 
@@ -665,37 +739,29 @@ def write_preds_to_csv(guess_classes: List[Dict[str, str]], csv_filename: str) -
     """
     Write prediction data to a CSV file.
 
-    This function appends prediction data, represented as a list of dictionaries,
-    to a specified CSV file. If the file is new or empty, it writes a header row
-    before appending the data.
-
-    Args:
-        guess_classes (list of dict): A list of dictionaries where each dictionary
-            contains prediction data with keys "RSID", "Kingdom", "Phylum",
-            "Class", "Order", "Family", "Genus", and "Species".
-        csv_filename (str): The path to the CSV file where the data will be written.
-
-    Raises
-    ------
-        IOError: If there is an issue opening or writing to the file.
+    If a "BinaryAccuracy" field is present in the guess dictionaries, an
+    additional column will be written after "Species".
     """
     # Write guess_classes along with image paths to a new CSV
     with open(csv_filename, mode="a", newline="") as file:
         writer = csv.writer(file)
+        # Determine if BinaryAccuracy column is present
+        include_binary = any("BinaryAccuracy" in guess for guess in guess_classes)
         # Write header for guess classes if the file is new
         if file.tell() == 0:
-            writer.writerow(
-                [
-                    "RSID",
-                    "Kingdom",
-                    "Phylum",
-                    "Class",
-                    "Order",
-                    "Family",
-                    "Genus",
-                    "Species",
-                ]
-            )
+            header = [
+                "RSID",
+                "Kingdom",
+                "Phylum",
+                "Class",
+                "Order",
+                "Family",
+                "Genus",
+                "Species",
+            ]
+            if include_binary:
+                header.append("BinaryAccuracy")
+            writer.writerow(header)
 
         for guess in guess_classes:
             row = [
@@ -708,4 +774,8 @@ def write_preds_to_csv(guess_classes: List[Dict[str, str]], csv_filename: str) -
                 guess.get("Genus", ""),
                 guess.get("Species", ""),
             ]
+            if include_binary:
+                val = guess.get("BinaryAccuracy", "")
+                val = "" if val is None else val
+                row.append(val)
             writer.writerow(row)

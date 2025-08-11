@@ -33,6 +33,8 @@ from taxonomic_rag_system.utils.helpers import (
     extract_tax_metrics,
     write_overall_metrics,
     write_preds_to_csv,
+    write_sample_binary_accuracy_csv,
+    write_rank_attempts_csv,
 )
 
 
@@ -117,8 +119,20 @@ async def main() -> None:
             output_path
             + f"RS_naiveVLM_gpt_predictions_{current_date}_{current_time}.csv"
         )
+        # Write per-sample binary accuracy labels
+        sample_binary_csv_name = str(
+            output_path
+            + f"RS_naiveVLM_gpt_sample_binary_accuracy_{current_date}_{current_time}.csv"
+        )
+        # Write rank-level attempts (Count)
+        rank_attempts_csv_name = str(
+            output_path
+            + f"RS_naiveVLM_gpt_rank_attempts_{current_date}_{current_time}.csv"
+        )
         write_preds_to_csv(preds, predictions_csv_name)
         write_overall_metrics(final_metrics_csv_name, overalls)
+        write_sample_binary_accuracy_csv(preds, sample_binary_csv_name)
+        write_rank_attempts_csv(rank_attempts_csv_name, overalls, total_samples=len(preds))
 
 
 if __name__ == "__main__":
