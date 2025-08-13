@@ -1,14 +1,16 @@
 """Module of tests for retriever classes in `taxonomic_rag_system` project."""
 
-import pytest
+from unittest.mock import AsyncMock, patch
 
+import pytest
+from langchain_core.documents import Document
+
+from taxonomic_rag_system.utils.out_models import TaxBiodiversity
 from taxonomic_rag_system.utils.retriever import WikiStellaRAGModel
 
 
 def test_wiki_stella_rag_model_initialization():
     """Test initialization of WikiStellaRAGModel."""
-    from unittest.mock import patch
-
     with (
         patch("taxonomic_rag_system.utils.retriever.Chroma"),
         patch("taxonomic_rag_system.utils.retriever.SafeHuggingFaceEmbeddings"),
@@ -29,12 +31,6 @@ def test_wiki_stella_rag_model_initialization():
 @pytest.mark.integration_test()
 async def test_retriever_pipeline():
     """Test the retriever pipeline with a mock RAG model."""
-    from unittest.mock import AsyncMock, patch
-
-    from langchain_core.documents import Document
-
-    from taxonomic_rag_system.utils.out_models import TaxBiodiversity
-
     with (
         patch("taxonomic_rag_system.utils.retriever.Chroma"),
         patch("taxonomic_rag_system.utils.retriever.SafeHuggingFaceEmbeddings"),

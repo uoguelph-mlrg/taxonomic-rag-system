@@ -24,6 +24,7 @@ Dependencies:
 """
 
 import logging
+import traceback
 from typing import Any, Union, overload
 
 import torch
@@ -193,8 +194,6 @@ class RAGChainBuilder:
             print("RAGChainBuilder.ainvoke completed successfully")
             return result
         except Exception as e:
-            import traceback
-
             print("Error in RAGChainBuilder.ainvoke:")
             print(f"Error type: {type(e).__name__}")
             print(f"Error message: {str(e)}")
