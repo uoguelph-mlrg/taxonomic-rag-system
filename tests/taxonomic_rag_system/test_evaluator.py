@@ -1,4 +1,26 @@
-"""Module of tests for evaluators and dataloaders in `taxonomic_rag_system` project."""
+"""
+Unit and integration tests for evaluators and dataloaders.
+
+This module tests the RareSpeciesEvaluator class and associated functions for
+processing and evaluating taxonomic classification datasets. It includes both
+unit tests for individual functions and integration tests for the complete
+evaluation pipeline.
+
+Tested components:
+- `process_row`: Function for processing individual dataset rows with image
+  and taxonomic data
+- `RareSpeciesEvaluator`: Main evaluator class for rare species classification
+  datasets
+
+Test coverage:
+- Valid and invalid image processing scenarios
+- Custom interval configuration for dataset loading
+- Integration pipeline testing with mock dataset instances
+- Dataloader functionality for batch processing
+
+Integration tests are marked with @pytest.mark.integration_test() and validate
+the complete evaluation workflow with mocked dependencies.
+"""
 
 from unittest.mock import MagicMock, patch
 

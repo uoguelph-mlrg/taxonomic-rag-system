@@ -1,4 +1,21 @@
-"""Module of tests for the ImageRAGModel and NaiveVLModel classes."""
+"""
+Unit and integration tests for the ImageRAGModel and NaiveVLModel classes.
+
+This module tests the core image processing and RAG pipeline functionality
+in the taxonomic_rag_system project. It includes both unit tests with mocked
+dependencies and integration tests that validate the complete pipeline flow.
+
+Tested classes:
+- `ImageRAGModel`: Complete RAG pipeline combining image captioning and retrieval
+- `NaiveVLModel`: Simple vision-language model for direct taxonomic classification
+
+Test types:
+- Unit tests: Individual method testing with mocked external dependencies
+- Integration tests: End-to-end pipeline testing with mock services
+
+The tests use fixtures from conftest.py to mock external API calls and ensure
+reproducible test results without external service dependencies.
+"""
 
 from unittest.mock import patch
 

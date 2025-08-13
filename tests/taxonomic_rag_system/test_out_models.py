@@ -1,4 +1,16 @@
-"""Module for unit tests of various pydantic output models."""
+"""
+Unit tests for Pydantic output models in the taxonomic_rag_system project.
+
+This module validates the structure and validation behavior of Pydantic models
+used for structured outputs in the taxonomic classification pipeline.
+
+Tested models:
+- `Tax`: Model for taxonomic classification data with hierarchical structure
+- `Caption`: Model for image caption generation outputs
+
+The tests ensure proper validation, serialization, and data integrity for
+structured outputs used throughout the taxonomic RAG system.
+"""
 
 from taxonomic_rag_system.utils.out_models import Caption, Tax
 

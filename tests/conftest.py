@@ -1,4 +1,19 @@
-"""Conftest."""
+"""
+Pytest configuration and fixtures for the taxonomic_rag_system test suite.
+
+This module provides shared fixtures and configuration for all tests in the
+taxonomic_rag_system package. It includes mock setups for external dependencies
+like API keys and provides standardized test fixtures for common components.
+
+Fixtures:
+- `mock_api_keys`: Automatically mocks API keys for OpenAI, OpenRouter, and Cohere
+- `mock_captioner`: Mocked DescriptiveCaptioner for image caption generation
+- `mock_rag_model`: Mocked WikiStellaRAGModel for RAG pipeline testing
+- `mock_image_processor`: Mocked ImageProcessor for image processing operations
+- `mock_tax_classifier`: Mocked TaxClassifierVLM for taxonomy classification
+- `mock_docs`: Sample document data for testing retrieval operations
+- `mock_tax_classifier_pyd`: Alternative mock for Pydantic-based taxonomy classification
+"""
 
 import os
 from unittest.mock import AsyncMock, MagicMock

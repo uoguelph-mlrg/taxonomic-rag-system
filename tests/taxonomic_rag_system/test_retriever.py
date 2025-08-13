@@ -1,4 +1,23 @@
-"""Module of tests for retriever classes in `taxonomic_rag_system` project."""
+"""
+Unit and integration tests for retriever classes in the taxonomic_rag_system project.
+
+This module tests the WikiStellaRAGModel class which handles document retrieval
+and RAG pipeline construction for taxonomic classification. Tests include both
+initialization validation and integration pipeline testing.
+
+Tested classes:
+- `WikiStellaRAGModel`: RAG model using Stella embeddings and Chroma vector store
+
+Test coverage:
+- Model initialization with various parameters (collection name, embedding model,
+  search type)
+- Integration pipeline testing with mocked dependencies (Chroma, embeddings,
+  RAG chain)
+- Document retrieval and response generation functionality
+
+Integration tests use mocked external dependencies to ensure reproducible
+results without requiring actual vector stores or API calls.
+"""
 
 from unittest.mock import AsyncMock, patch
 

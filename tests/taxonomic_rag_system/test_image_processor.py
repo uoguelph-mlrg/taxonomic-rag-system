@@ -1,4 +1,17 @@
-"""Module of unit tests of image processor class in `taxonomic_rag_system` project."""
+"""
+Unit tests for the ImageProcessor class in the taxonomic_rag_system project.
+
+This module tests the ImageProcessor class functionality for converting images
+from various sources (URLs, file paths, PIL objects) to base64-encoded strings
+for use in vision-language model processing.
+
+Tested functionality:
+- Image processing from URLs using imgurl_tob64
+- Image processing from file paths using imgfile_tob64
+- Image processing from PIL Image objects using pilimg_tob64
+- Error handling for invalid or missing image inputs
+- Error handling for multiple conflicting image inputs
+"""
 
 from unittest.mock import patch
 
