@@ -90,12 +90,13 @@ async def test_tax_classifier_vlm_error_handling():
 @pytest.mark.asyncio
 async def test_descriptive_captioner_generate_caption():
     """Test caption generation using DescriptiveCaptioner."""
+    from taxonomic_rag_system.utils.out_models import Caption
+
     # Mock the instructor client response
-    mock_caption_obj = MagicMock()
-    mock_caption_obj.caption = "Detailed mock caption of the organism"
+    mock_caption_obj = Caption(caption="Detailed mock caption of the organism")
 
     mock_client = AsyncMock()
-    mock_client.chat.completions.create.return_value = mock_caption_obj
+    mock_client.chat.completions.create = AsyncMock(return_value=mock_caption_obj)
 
     mock_cap = AsyncMock()
 

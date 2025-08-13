@@ -44,25 +44,21 @@ def test_process_row_invalid_image():
     assert result["class_dict"]["RSID"] == ""
 
 
-@patch("taxonomic_rag_system.utils.evaluator.load_dataset")
-def test_rarespecies_evaluator_custom_interval(mock_load_dataset):
+@patch("taxonomic_rag_system.utils.evaluator.RareSpeciesImageClassDataset")
+def test_rarespecies_evaluator_custom_interval(mock_dataset_class):
     """Test RareSpeciesEvaluator with custom interval."""
-    # Mock dataset setup
-    mock_dataset = MagicMock()
-    mock_dataset.num_rows = 100
-    mock_train = MagicMock()
-    mock_train.select.return_value = mock_dataset
-    mock_load_dataset.return_value = {"train": mock_train}
+    # Mock the dataset class
+    mock_dataset_instance = MagicMock()
+    mock_dataset_class.return_value = mock_dataset_instance
 
-    # Mock the map and filter operations
-    mock_dataset.map.return_value = mock_dataset
-    mock_dataset.filter.return_value = mock_dataset
-    mock_dataset.__getitem__.return_value = [MagicMock(), MagicMock()]
-
+    # Create evaluator with custom interval
     evaluator = RareSpeciesEvaluator(interval=(50, 99))
 
-    # Verify the correct interval was used
-    mock_train.select.assert_called_with(range(50, 99))
+    # Verify the dataset class was called with the correct interval
+    mock_dataset_class.assert_called_once_with(interval=(50, 99))
+
+    # Verify the dataset was assigned
+    assert evaluator.dataset == mock_dataset_instance
 
 
 @pytest.mark.integration_test()

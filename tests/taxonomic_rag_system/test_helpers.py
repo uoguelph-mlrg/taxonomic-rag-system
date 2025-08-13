@@ -27,7 +27,7 @@ Dependencies:
 
 import os
 import tempfile
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pandas as pd
 import pytest
@@ -201,8 +201,8 @@ async def test_rag_evaluate():
         mock_faith.return_value = mock_faith_instance
         mock_relevancy.return_value = mock_relevancy_instance
 
-        mock_faith_instance.single_turn_ascore.return_value = 0.85
-        mock_relevancy_instance.single_turn_ascore.return_value = 0.90
+        mock_faith_instance.single_turn_ascore = AsyncMock(return_value=0.85)
+        mock_relevancy_instance.single_turn_ascore = AsyncMock(return_value=0.90)
 
         result = await rag_evaluate(eval_dict, mock_embeddings)
 
@@ -331,10 +331,18 @@ def test_dict_match():
 
 def test_classify_report():
     """Test generating a classification report."""
-    true_dicts = [{"A": "1"}, {"B": "2"}]
-    pred_dicts = [{"A": "1"}, {"B": "3"}]
+    true_dicts = [
+        {"Kingdom": "Animalia", "Phylum": "Arthropoda"},
+        {"Kingdom": "Animalia", "Phylum": "Chordata"},
+    ]
+    pred_dicts = [
+        {"Kingdom": "Animalia", "Phylum": "Arthropoda"},
+        {"Kingdom": "Animalia", "Phylum": "Mollusca"},
+    ]
     report = classify_report(true_dicts, pred_dicts)
-    assert "accuracy" in report["A"]
+    assert "Count" in report["Kingdom"]
+    assert "accuracy" in report["Kingdom"]
+    assert report["Kingdom"]["Count"] == 2.0
 
 
 def test_custom_collate_fn():
