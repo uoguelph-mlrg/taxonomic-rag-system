@@ -62,17 +62,27 @@ def test_rarespecies_evaluator_custom_interval(mock_dataset_class):
 
 
 @pytest.mark.integration_test()
-def test_rarespecies_evaluator_pipeline(mock_docs):
+@patch("taxonomic_rag_system.utils.evaluator.RareSpeciesImageClassDataset")
+def test_rarespecies_evaluator_pipeline(mock_dataset_class):
     """Test the RareSpeciesEvaluator pipeline."""
+    # Create a mock dataset instance with test data
     mock_dataset = MagicMock()
     mock_dataset.img_output_pairs = [
         ("mock_image_1", {"Kingdom": "Animalia", "Phylum": "Chordata"}),
         ("mock_image_2", {"Kingdom": "Plantae", "Phylum": "Tracheophyta"}),
     ]
+    mock_dataset.__len__ = MagicMock(return_value=2)
+    mock_dataset.__getitem__ = MagicMock(
+        side_effect=lambda idx: mock_dataset.img_output_pairs[idx]
+    )
 
+    # Configure the mock class to return our mock instance
+    mock_dataset_class.return_value = mock_dataset
+
+    # Create the evaluator (using the mocked dataset)
     evaluator = RareSpeciesEvaluator()
-    evaluator.dataset = mock_dataset
 
+    # Create and test the dataloader
     dataloader = evaluator.dataloader(batch_size=1)
 
     for batch in dataloader:
