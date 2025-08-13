@@ -242,12 +242,15 @@ class ImageRAGModel:
         )
         return await self.captioner.generate_caption(image_b64)
 
-    async def rarespecies_dataset_run(self, interval: tuple[int, int] = (0, 999), verbose: int = 1) -> list[dict[str, Any]]:
+    async def rarespecies_dataset_run(
+        self, interval: tuple[int, int] = (0, 999), verbose: int = 1
+    ) -> list[dict[str, Any]]:
         """
         Asynchronously processes a dataset of rare species images using a RAG system.
 
         Args:
-            interval (tuple[int, int], optional): The range of indices to process from the dataset.
+            interval (tuple[int, int], optional): The range of indices to process from
+                the dataset.
                 Defaults to (0, 999).
             verbose (int, optional): Verbosity level for logging and debugging.
                 - 0: No output.
@@ -424,7 +427,8 @@ class NaiveVLModel:
         Pass over the rare-species dataset.
 
         Args:
-            interval (tuple[int, int], optional): The range of indices to process from the dataset.
+            interval (tuple[int, int], optional): The range of indices to process from
+                the dataset.
                 Defaults to (0, 999).
             verbose (int, optional): Verbosity level for logging. Defaults to 1.
                 - If `verbose > 1`, detailed taxonomy level comparisons will be printed.

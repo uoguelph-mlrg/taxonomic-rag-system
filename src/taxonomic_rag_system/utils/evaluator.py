@@ -89,9 +89,7 @@ class RareSpeciesImageClassDataset(Dataset):
         processed_ds = ds.map(process_row_arthropod)
         good_ds = processed_ds.filter(lambda example: example["image"] is not None)
         print(f"Post-filter LENGTH: {good_ds.num_rows}")
-        self.img_output_pairs = list(
-            zip(good_ds["image"], good_ds["class_dict"])
-        )
+        self.img_output_pairs = list(zip(good_ds["image"], good_ds["class_dict"]))
 
     def __len__(self) -> int:
         """
