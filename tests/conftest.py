@@ -1,8 +1,36 @@
 """Conftest."""
 
+import os
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from langchain_core.documents import Document
+
+from taxonomic_rag_system.utils.out_models import TaxBiodiversity
+
+
+@pytest.fixture(autouse=True)
+def mock_api_keys(monkeypatch):
+    """Automatically mock API keys for all tests."""
+
+    def mock_load_api_keys():
+        os.environ["OPENAI_API_KEY"] = "test-openai-key"
+        os.environ["OPENROUTER_API_KEY"] = "test-openrouter-key"
+        os.environ["COHERE_API_KEY"] = "test-cohere-key"
+
+    monkeypatch.setattr(
+        "taxonomic_rag_system.utils.helpers.load_api_keys", mock_load_api_keys
+    )
+    monkeypatch.setattr(
+        "taxonomic_rag_system.core.image_rag.load_api_keys", mock_load_api_keys
+    )
+    monkeypatch.setattr(
+        "taxonomic_rag_system.utils.retriever.load_api_keys", mock_load_api_keys
+    )
+    # Also set the environment variables directly for any code that checks them
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+    monkeypatch.setenv("COHERE_API_KEY", "test-cohere-key")
 
 
 @pytest.fixture
@@ -16,10 +44,6 @@ def mock_captioner():
 @pytest.fixture
 def mock_rag_model():
     """Fixture for a mocked RAG model."""
-    from langchain_core.documents import Document
-
-    from taxonomic_rag_system.utils.out_models import TaxBiodiversity
-
     rag_model = AsyncMock()
     rag_model.ainvoke.return_value = TaxBiodiversity(
         classification={

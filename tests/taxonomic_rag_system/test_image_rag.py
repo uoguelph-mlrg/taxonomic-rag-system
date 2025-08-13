@@ -1,5 +1,7 @@
 """Module of tests for the ImageRAGModel and NaiveVLModel classes."""
 
+from unittest.mock import patch
+
 import pytest
 
 from taxonomic_rag_system.core.image_rag import ImageRAGModel, NaiveVLModel
@@ -8,8 +10,6 @@ from taxonomic_rag_system.core.image_rag import ImageRAGModel, NaiveVLModel
 @pytest.mark.asyncio
 async def test_query_image(mock_captioner, mock_rag_model, mock_image_processor):
     """Test querying an image using ImageRAGModel."""
-    from unittest.mock import patch
-
     with (
         patch(
             "taxonomic_rag_system.core.image_rag.WikiStellaRAGModel",
@@ -38,8 +38,6 @@ async def test_query_image(mock_captioner, mock_rag_model, mock_image_processor)
 @pytest.mark.integration_test()
 async def test_naive_vlm_pipeline(mock_image_processor, mock_tax_classifier):
     """Test the NaiveVLModel pipeline with mock dependencies."""
-    from unittest.mock import patch
-
     with (
         patch(
             "taxonomic_rag_system.core.image_rag.ImageProcessor",
@@ -65,8 +63,6 @@ async def test_naive_vlm_pipeline(mock_image_processor, mock_tax_classifier):
 @pytest.mark.integration_test()
 async def test_image_rag_pipeline(mock_image_processor, mock_captioner, mock_rag_model):
     """Test the ImageRAGModel pipeline with mock dependencies."""
-    from unittest.mock import patch
-
     with (
         patch(
             "taxonomic_rag_system.core.image_rag.WikiStellaRAGModel",
