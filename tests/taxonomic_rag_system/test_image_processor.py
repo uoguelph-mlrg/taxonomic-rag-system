@@ -59,7 +59,6 @@ def test_process_image_no_input():
     """Test error handling when no image input is provided."""
     with pytest.raises(ValueError, match="Error loading image"):
         ImageProcessor.process_image()
-    assert ValueError
 
 
 def test_process_image_multiple_inputs():

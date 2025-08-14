@@ -11,7 +11,7 @@ Fixtures:
 - `mock_rag_model`: Mocked WikiStellaRAGModel for RAG pipeline testing
 - `mock_image_processor`: Mocked ImageProcessor for image processing operations
 - `mock_tax_classifier`: Mocked TaxClassifierVLM for taxonomy classification
-- `mock_docs`: Sample document data for testing retrieval operations
+- `mock_docs`: Document objects with metadata for testing retrieval
 - `mock_tax_classifier_pyd`: Alternative mock for Pydantic-based taxonomy classification
 """
 
@@ -104,14 +104,14 @@ def mock_tax_classifier():
 def mock_docs():
     """Fixture for mocked documents."""
     return [
-        {
-            "metadata": {"source": "doc1", "relevance_score": 0.9},
-            "page_content": "Content 1",
-        },
-        {
-            "metadata": {"source": "doc2", "relevance_score": 0.8},
-            "page_content": "Content 2",
-        },
+        Document(
+            page_content="Content 1",
+            metadata={"source": "doc1", "relevance_score": 0.9},
+        ),
+        Document(
+            page_content="Content 2",
+            metadata={"source": "doc2", "relevance_score": 0.5},
+        ),
     ]
 
 

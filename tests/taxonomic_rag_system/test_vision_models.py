@@ -9,7 +9,7 @@ Test cases use mock objects to simulate the behavior of external dependencies.
 """
 
 import json
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -18,23 +18,6 @@ from taxonomic_rag_system.utils.vision_models import (
     DescriptiveCaptioner,
     TaxClassifierVLM,
 )
-
-
-@pytest.fixture(autouse=True)
-def mock_api_key_files():
-    """Mock the behavior of opening files to read API keys."""
-    with (
-        patch("builtins.open", mock_open(read_data="mock_api_key")),
-        patch.dict(
-            "os.environ",
-            {
-                "OPENAI_API_KEY": "mock_openai_key",
-                "OPENROUTER_API_KEY": "mock_openrouter_key",
-                "COHERE_API_KEY": "mock_cohere_key",
-            },
-        ),
-    ):
-        yield
 
 
 @pytest.mark.asyncio

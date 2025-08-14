@@ -20,18 +20,16 @@ Tested Functions:
 - `custom_collate_fn`: Custom collate function for batching data in a DataLoader.
 
 Dependencies:
-- `PIL.Image` for image processing.
-- `base64` and `io.BytesIO` for encoding and decoding images.
-- `mocker` for mocking external dependencies in tests.
+- `PIL.Image` for image processing
+- `pytest` for test framework and fixtures from conftest.py
+- `unittest.mock` for mocking external dependencies in tests
 """
 
 import os
-import tempfile
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pandas as pd
 import pytest
-from langchain.schema import Document
 from PIL import Image
 
 from taxonomic_rag_system.utils.helpers import (
@@ -78,27 +76,23 @@ def test_load_api_keys_missing_openai():
         load_api_keys()
 
 
-def test_write_overall_metrics():
+def test_write_overall_metrics(tmp_path):
     """Test writing metrics to CSV."""
     test_data = {
         "Kingdom": {"accuracy": 0.95, "f1": 0.93},
         "Phylum": {"accuracy": 0.87, "f1": 0.85},
     }
     # Create a temporary file for writing CSV
-    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
-        csv_filename = f.name
+    csv_filename = tmp_path / "test_metrics.csv"
 
-    try:
-        write_overall_metrics(csv_filename, test_data)
+    write_overall_metrics(str(csv_filename), test_data)
 
-        # Verify file contents
-        with open(csv_filename, "r") as f:
-            content = f.read()
-            assert "Rank,Accuracy,F1" in content
-            assert "Kingdom,0.95,0.93" in content
-            assert "Phylum,0.87,0.85" in content
-    finally:  # Ensure temp file is deleted
-        os.unlink(csv_filename)
+    # Verify file contents
+    with open(csv_filename, "r") as f:
+        content = f.read()
+        assert "Rank,Accuracy,F1" in content
+        assert "Kingdom,0.95,0.93" in content
+        assert "Phylum,0.87,0.85" in content
 
 
 def test_extract_tax_metrics():
@@ -142,7 +136,7 @@ def test_extract_tax_metrics_rs():
     assert class_report["Kingdom"]["Count"] == 1.0
 
 
-def test_write_preds_to_csv():
+def test_write_preds_to_csv(tmp_path):
     """Test writing predictions to CSV."""
     guess_classes = [
         {
@@ -158,22 +152,18 @@ def test_write_preds_to_csv():
     ]
 
     # Create temp file to mock writing to csv
-    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
-        csv_filename = f.name
+    csv_filename = tmp_path / "test_predictions.csv"
 
-    try:
-        write_preds_to_csv(guess_classes, csv_filename)
+    write_preds_to_csv(guess_classes, str(csv_filename))
 
-        # Verify file contents
-        with open(csv_filename, "r") as f:
-            content = f.read()
-            assert "RSID,Kingdom,Phylum,Class,Order,Family,Genus,Species" in content
-            assert (
-                "RS001,Animalia,Chordata,Mammalia,Primates,Hominidae,Homo,Homo sapiens"
-                in content
-            )
-    finally:  # Ensure temp file is deleted
-        os.unlink(csv_filename)
+    # Verify file contents
+    with open(csv_filename, "r") as f:
+        content = f.read()
+        assert "RSID,Kingdom,Phylum,Class,Order,Family,Genus,Species" in content
+        assert (
+            "RS001,Animalia,Chordata,Mammalia,Primates,Hominidae,Homo,Homo sapiens"
+            in content
+        )
 
 
 @pytest.mark.asyncio
@@ -209,21 +199,6 @@ async def test_rag_evaluate():
         assert isinstance(result, pd.DataFrame)
         assert result["faithfulness"].iloc[0] == 0.85
         assert result["response_relevancy"].iloc[0] == 0.90
-
-
-@pytest.fixture
-def mock_docs():
-    """Fixture to create mock documents for testing."""
-    return [
-        Document(
-            page_content="Content 1",
-            metadata={"source": "doc1", "relevancy_score": 0.9},
-        ),
-        Document(
-            page_content="Content 2",
-            metadata={"source": "doc2", "relevancy_score": 0.5},
-        ),
-    ]
 
 
 def test_format_context(mock_docs):
@@ -300,8 +275,6 @@ def test_imgfile_tob64(tmp_path):
     image.save(image_path)
     result = imgfile_tob64(str(image_path))
     assert isinstance(result, str)
-    # Delete temp file
-    os.remove(image_path)
 
 
 def test_pilimg_tob64():
