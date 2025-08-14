@@ -189,16 +189,18 @@ class RAGChainBuilder:
         :return: The output of the RAG chain.
         """
         try:
-            print(f"RAGChainBuilder.ainvoke called with input keys: {list(inp.keys())}")
+            logger.info(
+                f"RAGChainBuilder.ainvoke called with input keys: {list(inp.keys())}"
+            )
             result = await self.rag_chain.ainvoke(input=inp)
-            print("RAGChainBuilder.ainvoke completed successfully")
+            logger.info("RAGChainBuilder.ainvoke completed successfully")
             return result
         except Exception as e:
-            print("Error in RAGChainBuilder.ainvoke:")
-            print(f"Error type: {type(e).__name__}")
-            print(f"Error message: {str(e)}")
-            print("Full traceback:")
-            traceback.print_exc()
+            logger.error("Error in RAGChainBuilder.ainvoke:")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error message: {str(e)}")
+            logger.error("Full traceback:")
+            logger.error(traceback.format_exc())
             # Return a default result instead of letting the error propagate
             return TaxBiodiversity(
                 classification={
