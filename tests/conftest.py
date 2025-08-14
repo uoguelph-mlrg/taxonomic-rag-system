@@ -42,6 +42,9 @@ def mock_api_keys(monkeypatch):
     monkeypatch.setattr(
         "taxonomic_rag_system.utils.retriever.load_api_keys", mock_load_api_keys
     )
+    monkeypatch.setattr(
+        "taxonomic_rag_system.utils.vision_models.load_api_keys", mock_load_api_keys
+    )
     # Also set the environment variables directly for any code that checks them
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
