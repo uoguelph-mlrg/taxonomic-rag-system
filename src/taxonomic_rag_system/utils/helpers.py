@@ -53,8 +53,10 @@ Functions:
 
 import base64
 import csv
+import os
 import sys
 from io import BytesIO
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -70,6 +72,43 @@ from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import Faithfulness, ResponseRelevancy
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.preprocessing import LabelEncoder
+
+
+def load_api_keys() -> None:
+    """Load API keys from files.
+
+    OpenAI API key is required, OpenRouter and Cohere API keys are optional.
+    Read API keys from files in home dir - `~/.openai.key`,
+    `~/.openrouter.key` and `~/.cohere.key`.
+    """
+    try:
+        with open(Path.home() / ".openai.key", "r") as f:
+            os.environ["OPENAI_API_KEY"] = f.read().strip()
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            "Could not find OpenAI API key at ~/.openai.key. "
+            "This key is required for the model to function."
+        ) from None
+
+    try:
+        with open(Path.home() / ".openrouter.key", "r") as f:
+            os.environ["OPENROUTER_API_KEY"] = f.read().strip()
+    except FileNotFoundError:
+        # OpenRouter key is optional, only log a warning
+        print(
+            "Warning: Could not find OpenRouter API key at ~/.openrouter.key. "
+            "This is fine if you're not using OpenRouter models."
+        )
+
+    try:
+        with open(Path.home() / ".cohere.key", "r") as f:
+            os.environ["COHERE_API_KEY"] = f.read().strip()
+    except FileNotFoundError:
+        # Cohere key is optional, only log a warning
+        print(
+            "Warning: Could not find Cohere API key at ~/.cohere.key. "
+            "This is fine if you're not using reranking functionality."
+        )
 
 
 def format_context(docs: List[Document]) -> str:
@@ -89,6 +128,8 @@ def format_context(docs: List[Document]) -> str:
             source_line = f"\tsource: page {d.metadata['page']} of {d.metadata['source'].split('/')[-1]}"
         else:
             source_line = f"\tsource: {d.metadata['source'].split('/')[-1]}"
+        if d.metadata.get("relevance_score") is None:
+            d.metadata["relevance_score"] = "N/A"
         # Construct output string with source, relevancy score and actual content
         out.append(
             f"""Document {i + 1}:
@@ -107,7 +148,7 @@ def format_docs(docs: List[Document]) -> str:
     :param docs: Retrieved document chunks
     :return: Single string containing all fetched document chunks
     """
-    return "\n\n".join(f"{doc.metadata.items()}\n{doc.page_content}" for doc in docs)
+    return "\n\n".join(f"{str(doc.metadata)}\n{doc.page_content}" for doc in docs)
 
 
 def unique_docs(docs: List[List[Document]]) -> List[Document]:
@@ -124,10 +165,10 @@ def unique_docs(docs: List[List[Document]]) -> List[Document]:
 
 
 def simple_string_output(out_dict: Dict[str, Union[str, Dict[str, str]]]) -> str:
-    """Generate a formatted string representation of taxonomic classification details.
+    """Generate a formatted string of taxonomic classification results.
 
     Args:
-        out_dict (dict): A dictionary containing the following keys:
+        out_dict (dict): A dictionary of output from the RAG models containing the keys:
             - "guess_class": The taxonomic classification guess.
             - "ancestral": Information about ancestral features.
             - "specific": Information about organismal features.
@@ -154,10 +195,10 @@ Commentary:
 
 def clean_string_output(out_dict: Dict[str, Union[str, Dict[str, str]]]) -> str:
     """
-    Format and return a string representation of the provided observation dictionary.
+    Generate a formatted string of taxonomic classification and intermediate results.
 
     Args:
-        out_dict (dict): A dictionary containing output data with the following keys:
+        out_dict (dict): A dict of output/intermediates from the RAG models with keys:
             - "guess_class" (dict): A dictionary of classification levels and values.
             - "caption" (str): A description or caption for the observation.
             - "ancestral" (str, optional): A description of ancestral features
@@ -307,7 +348,7 @@ def pilimg_tob64(image_obj: Image.Image) -> str:
 
 
 def get_metrics(
-    y_trues: List[str], y_preds: List[str], level: str, count: int, verbose: bool = True
+    y_trues: List[str], y_preds: List[str], level: str, verbose: bool = True
 ) -> Dict[str, Union[float, int]]:
     """
     Calculate and return accuracy + F1 score metrics for true and predicted labels.
@@ -316,7 +357,6 @@ def get_metrics(
         y_trues (list): List of true labels.
         y_preds (list): List of predicted labels.
         level (str): Taxonomic rank or level being evaluated.
-        count (int): Count of items at the given taxonomic rank.
         verbose (bool, optional): If True (default), prints detailed metrics to console.
 
     Returns
@@ -349,6 +389,7 @@ def get_metrics(
     f1 = f1_score(y_true_encoded, y_pred_encoded, average="weighted")
 
     if verbose:  # Report metrics with tax rank to screen
+        count = len(y_preds)
         print(f"Rank: {level} ({count})")
         print("=" * 40)
         print("Accuracy:", accuracy)
@@ -426,9 +467,7 @@ def classify_report(
         ]
         pred_names = [pred_dict[rank] for pred_dict in pred_dicts if rank in pred_dict]
         out_dict[rank] = {"Count": float(len(pred_names))}
-        metrics = get_metrics(
-            true_names, pred_names, rank, count=len(pred_names), verbose=verbose
-        )
+        metrics = get_metrics(true_names, pred_names, rank, verbose=verbose)
         # Convert integer values in metrics to floats
         metrics = {k: float(v) if isinstance(v, int) else v for k, v in metrics.items()}
         out_dict[rank].update(metrics)
@@ -473,7 +512,7 @@ async def rag_evaluate(
         eval_dict (dict): A dictionary containing the evaluation data. It must include:
             - "caption" (str): The caption describing the new organism.
             - "context" (str): The context that may or may not match the caption.
-        embeddings: Pre-trained embeddings used for relevancy scoring.
+        embeddings: Pre-trained embedding model used for RAG.
 
     Returns
     -------

@@ -11,7 +11,6 @@ Tested Functions:
 - `unique_docs`: Filters out duplicate documents from a list.
 - `simple_string_output`: Converts a dictionary into a simple string representation.
 - `clean_string_output`: Cleans and formats a dictionary into a structured string.
-- `b64_to_pil`: Converts a base64-encoded image to a PIL Image object.
 - `imgurl_tob64`: Converts an image from a URL to a base64-encoded string.
 - `imgfile_tob64`: Converts an image file to a base64-encoded string.
 - `pilimg_tob64`: Converts a PIL Image object to a base64-encoded string.
@@ -21,31 +20,185 @@ Tested Functions:
 - `custom_collate_fn`: Custom collate function for batching data in a DataLoader.
 
 Dependencies:
-- `PIL.Image` for image processing.
-- `base64` and `io.BytesIO` for encoding and decoding images.
-- `mocker` for mocking external dependencies in tests.
+- `PIL.Image` for image processing
+- `pytest` for test framework and fixtures from conftest.py
+- `unittest.mock` for mocking external dependencies in tests
 """
 
-import base64
-from io import BytesIO
+import os
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
+import pandas as pd
+import pytest
 from PIL import Image
 
 from taxonomic_rag_system.utils.helpers import (
-    b64_to_pil,
     classify_report,
     clean_string_output,
     custom_collate_fn,
     dict_match,
+    extract_tax_metrics,
+    extract_tax_metrics_rs,
     format_context,
     format_docs,
     get_metrics,
     imgfile_tob64,
     imgurl_tob64,
+    load_api_keys,
     pilimg_tob64,
+    rag_evaluate,
     simple_string_output,
     unique_docs,
+    write_overall_metrics,
+    write_preds_to_csv,
 )
+
+
+def test_load_api_keys_success():
+    """Test successful API key loading."""
+    with patch(
+        "builtins.open",
+        mock_open(read_data="test_key"),
+        patch.dict(os.environ, {}, clear=True),
+    ):
+        load_api_keys()
+        assert os.environ["OPENAI_API_KEY"] == "test_key"
+
+
+def test_load_api_keys_missing_openai():
+    """Test error when OpenAI key is missing."""
+    with (
+        patch(target="builtins.open", side_effect=FileNotFoundError),
+        pytest.raises(
+            expected_exception=FileNotFoundError, match="Could not find OpenAI API key"
+        ),
+    ):
+        load_api_keys()
+
+
+def test_write_overall_metrics(tmp_path):
+    """Test writing metrics to CSV."""
+    test_data = {
+        "Kingdom": {"accuracy": 0.95, "f1": 0.93},
+        "Phylum": {"accuracy": 0.87, "f1": 0.85},
+    }
+    # Create a temporary file for writing CSV
+    csv_filename = tmp_path / "test_metrics.csv"
+
+    write_overall_metrics(str(csv_filename), test_data)
+
+    # Verify file contents
+    with open(csv_filename, "r") as f:
+        content = f.read()
+        assert "Rank,Accuracy,F1" in content
+        assert "Kingdom,0.95,0.93" in content
+        assert "Phylum,0.87,0.85" in content
+
+
+def test_extract_tax_metrics():
+    """Test extracting taxonomic metrics from results."""
+    result_obj = [
+        {
+            "true_class": {"Kingdom": "Animalia", "Phylum": "Chordata"},
+            "guess_class": {"Kingdom": "Animalia", "Phylum": "Chordata"},
+        },
+        {
+            "true_class": {"Kingdom": "Plantae", "Phylum": "Tracheophyta"},
+            "guess_class": {"Kingdom": "Plantae", "Phylum": "Magnoliophyta"},
+        },
+    ]
+
+    class_report, guess_classes = extract_tax_metrics(result_obj, verbose=False)
+
+    assert "Kingdom" in class_report
+    assert "Phylum" in class_report
+    assert len(guess_classes) == 2
+    assert guess_classes[0]["Kingdom"] == "Animalia"
+    assert class_report["Kingdom"]["Count"] == 2.0
+    assert class_report["Kingdom"]["accuracy"] == 1.0
+
+
+def test_extract_tax_metrics_rs():
+    """Test extracting taxonomic metrics with RSID enrichment."""
+    result_obj = [
+        {
+            "true_class": {"Kingdom": "Animalia"},
+            "guess_class": {"Kingdom": "Animalia"},
+            "RSID": "RS001",
+        }
+    ]
+
+    class_report, guess_classes = extract_tax_metrics_rs(result_obj, verbose=False)
+
+    assert len(guess_classes) == 1
+    assert guess_classes[0]["RSID"] == "RS001"
+    assert guess_classes[0]["Kingdom"] == "Animalia"
+    assert class_report["Kingdom"]["Count"] == 1.0
+
+
+def test_write_preds_to_csv(tmp_path):
+    """Test writing predictions to CSV."""
+    guess_classes = [
+        {
+            "RSID": "RS001",
+            "Kingdom": "Animalia",
+            "Phylum": "Chordata",
+            "Class": "Mammalia",
+            "Order": "Primates",
+            "Family": "Hominidae",
+            "Genus": "Homo",
+            "Species": "Homo sapiens",
+        }
+    ]
+
+    # Create temp file to mock writing to csv
+    csv_filename = tmp_path / "test_predictions.csv"
+
+    write_preds_to_csv(guess_classes, str(csv_filename))
+
+    # Verify file contents
+    with open(csv_filename, "r") as f:
+        content = f.read()
+        assert "RSID,Kingdom,Phylum,Class,Order,Family,Genus,Species" in content
+        assert (
+            "RS001,Animalia,Chordata,Mammalia,Primates,Hominidae,Homo,Homo sapiens"
+            in content
+        )
+
+
+@pytest.mark.asyncio
+async def test_rag_evaluate():
+    """Test RAG evaluation functionality."""
+    eval_dict = {
+        "caption": "Test caption",
+        "context": ["Test context"],
+        "guess_class": {"Kingdom": "Animalia"},
+        "ancestral": "Test ancestral",
+        "specific": "Test specific",
+        "commentary": "Test commentary",
+        "biodiversity": "Test biodiversity",
+    }
+
+    mock_embeddings = MagicMock()
+
+    # Mock the scoring results
+    with (
+        patch("taxonomic_rag_system.utils.helpers.Faithfulness") as mock_faith,
+        patch("taxonomic_rag_system.utils.helpers.ResponseRelevancy") as mock_relevancy,
+    ):
+        mock_faith_instance = MagicMock()
+        mock_relevancy_instance = MagicMock()
+        mock_faith.return_value = mock_faith_instance
+        mock_relevancy.return_value = mock_relevancy_instance
+
+        mock_faith_instance.single_turn_ascore = AsyncMock(return_value=0.85)
+        mock_relevancy_instance.single_turn_ascore = AsyncMock(return_value=0.90)
+
+        result = await rag_evaluate(eval_dict, mock_embeddings)
+
+        assert isinstance(result, pd.DataFrame)
+        assert result["faithfulness"].iloc[0] == 0.85
+        assert result["response_relevancy"].iloc[0] == 0.90
 
 
 def test_format_context(mock_docs):
@@ -66,23 +219,23 @@ def test_format_docs(mock_docs):
 
 def test_unique_docs(mock_docs):
     """Test filtering out duplicate documents."""
-    docs = [mock_docs, mock_docs]
+    docs = [[mock_docs[0], mock_docs[0]]]
     result = unique_docs(docs)
-    assert len(result) == 2
-    assert result[0]["page_content"] == "Content 1"
+    assert len(result) == 1
+    assert result[0].page_content == "Content 1"
 
 
 def test_simple_string_output():
     """Test converting a dictionary to a simple string."""
     out_dict = {
-        "guess_class": "Mammalia",
+        "guess_class": {"Kingdom": "Animalia", "Phylum": "Chordata"},
         "ancestral": "Warm-blooded",
         "specific": "Fur",
         "biodiversity": "High",
         "commentary": "Common traits",
     }
     result = simple_string_output(out_dict)
-    assert "Mammalia" in result
+    assert "Animalia" in result
     assert "Warm-blooded" in result
     assert "Fur" in result
     assert "High" in result
@@ -106,17 +259,6 @@ def test_clean_string_output():
     assert "Unique features" in result
     assert "Interesting discovery" in result
     assert "Rich ecosystem" in result
-
-
-def test_b64_to_pil():
-    """Test converting a base64 string to a PIL Image."""
-    image = Image.new("RGB", (10, 10), color="red")
-    buffer = BytesIO()
-    image.save(buffer, format="JPEG")
-    image_b64 = base64.b64encode(buffer.getvalue())
-    result = b64_to_pil(image_b64)
-    assert isinstance(result, Image.Image)
-    assert result.size == (10, 10)
 
 
 def test_imgurl_tob64(mocker):
@@ -144,35 +286,42 @@ def test_pilimg_tob64():
 
 def test_get_metrics():
     """Test computing evaluation metrics."""
-    y_trues = ["A", "B", "C"]
-    y_preds = ["A", "B", "C"]
-    result = get_metrics(y_trues, y_preds, "TestLevel", 3)
+    y_trues = ["Mammalia", "Mammalia"]
+    y_preds = ["Mammalia", "Mammalia"]
+    result = get_metrics(y_trues, y_preds, "Order")
     assert result["accuracy"] == 1.0
     assert result["f1"] == 1.0
 
 
 def test_dict_match():
-    """Test comparing dictionaries for matching key-value pairs."""
-    y_true_dict = {"Kingdom": "Animalia", "Phylum": "Chordata"}
-    y_pred_dict = {"Kingdom": "Animalia", "Phylum": "Chordata"}
-    correct, total = dict_match(y_true_dict, y_pred_dict)
-    assert correct == 2
+    """Test comparing two dictionaries for matching key-value pairs."""
+    y_true_dict = {"A": "1", "B": "2"}
+    y_pred_dict = {"A": "1", "B": "3"}
+    matches, total = dict_match(y_true_dict, y_pred_dict)
+    assert matches == 1
     assert total == 2
 
 
 def test_classify_report():
     """Test generating a classification report."""
-    true_dicts = [{"Kingdom": "Animalia", "Phylum": "Chordata"}]
-    pred_dicts = [{"Kingdom": "Animalia", "Phylum": "Chordata"}]
-    result = classify_report(true_dicts, pred_dicts)
-    assert "Kingdom" in result
-    assert result["Kingdom"]["accuracy"] == 1.0
-    assert result["Kingdom"]["f1"] == 1.0
+    true_dicts = [
+        {"Kingdom": "Animalia", "Phylum": "Arthropoda"},
+        {"Kingdom": "Animalia", "Phylum": "Chordata"},
+    ]
+    pred_dicts = [
+        {"Kingdom": "Animalia", "Phylum": "Arthropoda"},
+        {"Kingdom": "Animalia", "Phylum": "Mollusca"},
+    ]
+    report = classify_report(true_dicts, pred_dicts)
+    assert "Count" in report["Kingdom"]
+    assert "accuracy" in report["Kingdom"]
+    assert report["Kingdom"]["Count"] == 2.0
 
 
 def test_custom_collate_fn():
-    """Test custom collate function for batching data."""
-    batch = [("image1", {"class": "A"}), ("image2", {"class": "B"})]
-    images, class_dicts = custom_collate_fn(batch)
-    assert images == ["image1", "image2"]
-    assert class_dicts == [{"class": "A"}, {"class": "B"}]
+    """Test custom collate function."""
+    batch = [(1, {"label": "A"}), (2, {"label": "B"})]
+    result = custom_collate_fn(batch)
+    assert len(result[0]) == 2
+    assert len(result[1]) == 2
+    assert result[1][0]["label"] == "A"

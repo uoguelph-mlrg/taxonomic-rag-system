@@ -1,80 +1,110 @@
-"""Module of tests for the ImageRAGModel and NaiveVLModel classes."""
+"""
+Unit and integration tests for the ImageRAGModel and NaiveVLModel classes.
 
-from unittest.mock import mock_open, patch
+This module tests the core image processing and RAG pipeline functionality
+in the taxonomic_rag_system project. It includes both unit tests with mocked
+dependencies and integration tests that validate the complete pipeline flow.
+
+Tested classes:
+- `ImageRAGModel`: Complete RAG pipeline combining image captioning and retrieval
+- `NaiveVLModel`: Simple vision-language model for direct taxonomic classification
+
+Test types:
+- Unit tests: Individual method testing with mocked external dependencies
+- Integration tests: End-to-end pipeline testing with mock services
+
+The tests use fixtures from conftest.py to mock external API calls and ensure
+reproducible test results without external service dependencies.
+"""
+
+from unittest.mock import patch
 
 import pytest
 
 from taxonomic_rag_system.core.image_rag import ImageRAGModel, NaiveVLModel
 
 
-@pytest.fixture(autouse=True)
-def mock_api_key_files():
-    """
-    Mock the behavior of opening a file to read an API key.
-
-    This function uses `unittest.mock.patch` to replace the built-in `open` function
-    with a mock that returns a predefined string ("mock_api_key") when read. It is
-    useful for testing code that relies on reading API keys from files without
-    requiring actual files to be present.
-
-    Yields
-    ------
-        None: This is a generator function that provides a mocked context for the
-        duration of its usage.
-    """
-    with patch("builtins.open", mock_open(read_data="mock_api_key")):
-        yield
-
-
 @pytest.mark.asyncio
-async def test_query_image(mock_captioner, mock_rag_model):
+async def test_query_image(mock_captioner, mock_rag_model, mock_image_processor):
     """Test querying an image using ImageRAGModel."""
-    model = ImageRAGModel(
-        vstore_path="/mock/path",
-        cap=mock_captioner,
-        model="mock_model",
-    )
-    model.rag_model = mock_rag_model
-    result = await model.query_image(image_path="/mock/image.jpg")
-    assert result["caption"] == "Mock caption"
-    assert result["results"]["classification"]["Kingdom"] == "Animalia"
+    with (
+        patch(
+            "taxonomic_rag_system.core.image_rag.WikiStellaRAGModel",
+            return_value=mock_rag_model,
+        ),
+        patch(
+            "taxonomic_rag_system.core.image_rag.DescriptiveCaptioner",
+            return_value=mock_captioner,
+        ),
+        patch(
+            "taxonomic_rag_system.core.image_rag.ImageProcessor",
+            return_value=mock_image_processor,
+        ),
+    ):
+        model = ImageRAGModel(
+            vstore_path="/mock/path",
+            cap=mock_captioner,
+            model="mock_model",
+        )
+        result = await model.query_image(image_path="/mock/image.jpg")
+        assert result["caption"] == "Mock caption"
+        assert result["results"].classification["Kingdom"] == "Animalia"
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration_test()
 async def test_naive_vlm_pipeline(mock_image_processor, mock_tax_classifier):
     """Test the NaiveVLModel pipeline with mock dependencies."""
-    # Initialize NaiveVLModel with mocks
-    naive_vlm = NaiveVLModel(model="mock_model")
-    naive_vlm.image_processor = mock_image_processor
-    naive_vlm.model = mock_tax_classifier
+    with (
+        patch(
+            "taxonomic_rag_system.core.image_rag.ImageProcessor",
+            return_value=mock_image_processor,
+        ),
+        patch(
+            "taxonomic_rag_system.core.image_rag.TaxClassifierVLM",
+            return_value=mock_tax_classifier,
+        ),
+    ):
+        # Initialize NaiveVLModel with mocks
+        naive_vlm = NaiveVLModel(model="mock_model")
 
-    # Run the pipeline
-    result = await naive_vlm.query(image_path="/mock/image.jpg")
+        # Run the pipeline
+        result = await naive_vlm.query(image_path="/mock/image.jpg")
 
-    # Assertions
-    assert result["Kingdom"] == "Animalia"
-    assert result["Phylum"] == "Chordata"
+        # Assertions
+        assert result["Kingdom"] == "Animalia"
+        assert result["Phylum"] == "Chordata"
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration_test()
 async def test_image_rag_pipeline(mock_image_processor, mock_captioner, mock_rag_model):
     """Test the ImageRAGModel pipeline with mock dependencies."""
-    # Initialize ImageRAGModel with mocks
-    image_rag = ImageRAGModel(
-        vstore_path="/mock/path",
-        cap=mock_captioner,
-        model="mock_model",
-    )
-    image_rag.image_processor = mock_image_processor
-    image_rag.captioner = mock_captioner
-    image_rag.rag_model = mock_rag_model
+    with (
+        patch(
+            "taxonomic_rag_system.core.image_rag.WikiStellaRAGModel",
+            return_value=mock_rag_model,
+        ),
+        patch(
+            "taxonomic_rag_system.core.image_rag.DescriptiveCaptioner",
+            return_value=mock_captioner,
+        ),
+        patch(
+            "taxonomic_rag_system.core.image_rag.ImageProcessor",
+            return_value=mock_image_processor,
+        ),
+    ):
+        # Initialize ImageRAGModel with mocks
+        image_rag = ImageRAGModel(
+            vstore_path="/mock/path",
+            cap=mock_captioner,
+            model="mock_model",
+        )
 
-    # Run the pipeline
-    result = await image_rag.query_image(image_path="/mock/image.jpg", context=True)
+        # Run the pipeline
+        result = await image_rag.query_image(image_path="/mock/image.jpg", context=True)
 
-    # Assertions
-    assert result["caption"] == "Mock caption"
-    assert result["results"]["classification"]["Kingdom"] == "Animalia"
-    assert result["context"] == ["Mock context"]
+        # Assertions
+        assert result["caption"] == "Mock caption"
+        assert result["results"].classification["Kingdom"] == "Animalia"
+        assert "Mock context" in result["context"]

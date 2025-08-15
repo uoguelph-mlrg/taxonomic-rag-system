@@ -1,19 +1,66 @@
 [project]
 name = "taxonomic-rag-system"
-version = "0.1.0"
+version = "0.1.1"
 description = "A taxonomic system using image captioining and RAG"
 readme = "README.md"
-authors = [ {name = "Nate Lesperance", email = "lesperan@uoguelph.ca"}]
+authors = [ {name = "Nathaniel Lesperance", email = "lesperan@uoguelph.ca"}, {name = "Shuting Xie", email = "shuting.xie@utoronto.ca"}, {name = "Graham W. Taylor", email = "gwtaylor@uoguelph.ca"}]
 license = "Apache-2.0"
 repository = "https://github.com/uoguelph-mlrg/taxonomic-rag-system"
 requires-python = ">=3.12"
 dependencies = [
     "backoff>=2.2.1",
+    "chromadb>=1.0.12",
     "instructor>=1.7.9",
     "pillow>=11.2.1",
     "pydantic>=2.11.3",
     "ragas>=0.2.15",
     "scikit-learn>=1.6.1",
+    "sentence-transformers>=4.1.0",
+]
+
+[project.optional-dependencies]
+# CPU version: use to local development or CI
+cpu = [
+    "torch==2.6.0",
+    "torchvision==0.21.0",
+]
+
+# GPU version
+gpu = [
+    "torch==2.6.0+cu118",
+    "torchvision==0.21.0+cu118",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu118"
+url = "https://download.pytorch.org/whl/cu118"
+explicit = true
+
+# designate sources for torch and torchvision
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu118", extra = "gpu" }
+]
+torchvision = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu118", extra = "gpu" }
+]
+
+# use unsafe-best-match to solve dependency conflicts
+[tool.uv]
+index-strategy = "unsafe-best-match"
+default-groups = ["dev", "docs"]
+conflicts = [
+  [
+    { extra = "cpu" },
+    { extra = "gpu" },
+  ],
 ]
 
 [build-system]
@@ -42,10 +89,6 @@ docs = [
     "ipython>=8.31.0",
 ]
 
-# Default dependency groups to be installed
-[tool.uv]
-default-groups = ["dev", "docs"]
-
 [tool.mypy]
 mypy_path = "src"
 ignore_missing_imports = true
@@ -68,6 +111,11 @@ warn_return_any = true
 implicit_reexport = false
 strict_equality = true
 extra_checks = true
+
+[[tool.mypy.overrides]]
+module = "transformers.*"
+ignore_errors = true
+follow_imports = "skip"
 
 [tool.ruff]
 include = ["*.py", "pyproject.toml", "*.ipynb"]

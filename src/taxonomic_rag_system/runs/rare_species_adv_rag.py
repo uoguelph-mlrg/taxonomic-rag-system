@@ -39,7 +39,6 @@ Usage:
 import argparse
 import asyncio
 import datetime
-import os
 from pathlib import Path
 
 from taxonomic_rag_system.core.image_rag import ImageRAGModel
@@ -70,7 +69,6 @@ def _parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--write",
         action="store_true",
-        type=bool,
         help="Flag to indicate whether to write the contextualized documents.",
     )
     parser.add_argument(
@@ -78,6 +76,18 @@ def _parse_arguments() -> argparse.Namespace:
         type=str,
         default="",
         help="Path where contextualized documents will be saved.",
+    )
+    parser.add_argument(
+        "--interval-start",
+        type=int,
+        default=0,
+        help="Start index in rare-species dataset (default: 0)",
+    )
+    parser.add_argument(
+        "--interval-end",
+        type=int,
+        default=999,
+        help="End index in rare-species dataset (default: 999)",
     )
 
     return parser.parse_args()
@@ -104,9 +114,7 @@ async def main() -> None:
     vstore_path = args.vstore
     write = args.write
     output_path = args.output
-
-    with open(Path.home() / ".cohere.key", "r") as f:
-        os.environ["COHERE_API_KEY"] = f.read().strip()
+    interval = (args.interval_start, args.interval_end)
 
     # 1. Build Model
     model = ImageRAGModel(
@@ -119,11 +127,17 @@ async def main() -> None:
     )
     print(f"Device: {model.get_device()}")
     # 2. RareSpecies Run
-    rarespp_predictions = await model.rarespecies_dataset_run(verbose=2)
+    rarespp_predictions = await model.rarespecies_dataset_run(
+        interval=interval, verbose=2
+    )
     # 3. Extract Results
     overalls, preds = extract_tax_metrics_rs(rarespp_predictions, verbose=True)
 
     if write:
+        # Create output directory if it doesn't exist
+        if output_path:
+            Path(output_path).mkdir(parents=True, exist_ok=True)
+
         current_date = datetime.datetime.now().strftime("%Y-%m-%d")  # Grab current date
         current_time = datetime.datetime.now().strftime("%H-%M-%S")  # Grab current time
         final_metrics_csv_name = str(

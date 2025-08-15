@@ -20,6 +20,10 @@ wheels/
 # macos
 *.DS_Store
 
+# coverage files
+.coverage
+coverage.xml
+
 # Claude local settings
 .claude/settings.local.json
 

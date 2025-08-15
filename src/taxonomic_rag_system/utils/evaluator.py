@@ -18,9 +18,31 @@ Functions
 process_row(row)
     Process a single row of a dataset containing image and taxonomic information,
     extracting relevant details and handling errors gracefully.
+
+process_row_arthropod(row)
+    Process a row containing image and taxonomic info, filtering only arthropods.
+
+To build a custom dataloader of arthropod images from a non-default interval
+(all arthropod images in first 1K images), use the `RareSpeciesEvaluator` class
+i.e. replace the dataloader in the ImageRAGModel.rarespecies_dataset_run() method:
+
+Instead of
+```
+async def rarespecies_dataset_run(self, verbose: int = 1) -> list[dict[str, Any]]:
+    dataloader = RareSpeciesEvaluator().dataloader()
+    ...
+```
+
+Replace with custom dataloader:
+
+```
+async def rarespecies_dataset_run(self, verbose: int = 1) -> list[dict[str, Any]]:
+    dataloader = RareSpeciesEvaluator(interval=(0, 9)).dataloader()
+```
+
 """
 
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from datasets import load_dataset
 from torch.utils.data import DataLoader, Dataset
@@ -28,12 +50,14 @@ from torch.utils.data import DataLoader, Dataset
 from taxonomic_rag_system.utils.helpers import custom_collate_fn
 
 
-class RareSpeciesImageClassDataset(Dataset):
+class RareSpeciesImageClassDataset(Dataset[Tuple[Any, Dict[str, Any]]]):
     """
     A PyTorch Dataset for loading and processing images of rare species.
 
     Sourced from the HuggingFace dataset "imageomics/rare-species".
     This dataset filters include only images belonging to the phylum 'Arthropoda'.
+    Can select a region in the dataset using the `interval` tuple
+    like (0, 999) for the first 1K images, the default.
 
     Attributes
     ----------
@@ -47,27 +71,25 @@ class RareSpeciesImageClassDataset(Dataset):
         index.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, interval: Optional[tuple[int, int]] = None) -> None:
         self.img_output_pairs: list[Tuple[Any, Dict[str, Any]]] = []
+        if interval is None:
+            self.start = 0
+            self.end = 999  # Arthropods are in first 1K
+        else:
+            self.start, self.end = interval
         self._set_up()
 
     def _set_up(self) -> None:
         # Load the dataset from HuggingFace
         ds = load_dataset("imageomics/rare-species")
-        ds = ds["train"].select(range(0, 999))
-        # Map the processing function, filtering out None results
-        processed_ds = ds.map(process_row)
-        print(f"Pre-filter LENGTH: {processed_ds.num_rows}")
+        ds = ds["train"].select(range(self.start, self.end))
+        print(f"Pre-filter LENGTH: {ds.num_rows}")
+        # Filter arthropods and images unable to load as well
+        processed_ds = ds.map(process_row_arthropod)
         good_ds = processed_ds.filter(lambda example: example["image"] is not None)
         print(f"Post-filter LENGTH: {good_ds.num_rows}")
-        # Filter the dataset to include only rows where the phylum is 'Arthropoda'
-        processed_ds = good_ds.filter(
-            lambda row: row["class_dict"]["Phylum"] == "Arthropoda"
-        )
-        print(f"Arthropod Images: {processed_ds.num_rows}")
-        self.img_output_pairs = list(
-            zip(processed_ds["image"], processed_ds["class_dict"])
-        )
+        self.img_output_pairs = list(zip(good_ds["image"], good_ds["class_dict"]))
 
     def __len__(self) -> int:
         """
@@ -107,11 +129,15 @@ class RareSpeciesEvaluator:
             The dataset containing images of rare species.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, interval: tuple[int, int] = (0, 999)) -> None:
         """Initialize the RareSpeciesEvaluator with a dataset of rare species images."""
-        self.dataset = RareSpeciesImageClassDataset()
+        self.dataset: Dataset[Tuple[Any, Dict[str, Any]]] = (
+            RareSpeciesImageClassDataset(interval=interval)
+        )
 
-    def dataloader(self, batch_size: int = 16) -> DataLoader:
+    def dataloader(
+        self, batch_size: int = 16
+    ) -> DataLoader[Tuple[Any, Dict[str, Any]]]:
         """
         Create a dataloader for the rare species dataset.
 
@@ -196,3 +222,22 @@ def process_row(row: Dict[str, Any]) -> Dict[str, Any]:
                 "Species": "",
             },
         }
+
+
+def process_row_arthropod(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Process a row containing image and taxonomic info, filtering only arthropods."""
+    if row.get("phylum") == "Arthropoda":
+        return process_row(row)
+    return {
+        "image": None,
+        "class_dict": {
+            "RSID": "",
+            "Kingdom": "",
+            "Phylum": "",
+            "Class": "",
+            "Order": "",
+            "Family": "",
+            "Genus": "",
+            "Species": "",
+        },
+    }

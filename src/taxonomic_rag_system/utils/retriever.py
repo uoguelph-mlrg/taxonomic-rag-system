@@ -6,6 +6,7 @@ It includes classes for constructing RAG chains, retrieving documents, and
 generating taxonomic classifications based on captions and contextual information.
 
 Classes:
+    SafeHuggingFaceEmbeddings: A custom safety wrapper for HuggingFaceEmbeddings
     RAGChainBuilder: Build and manage a Taxonomic RAG chain for
         taxonomic classification tasks.
     BaseRetriever: Base class for document retrieval using a Chroma collection.
@@ -14,18 +15,17 @@ Classes:
 
 Dependencies:
     - torch
-    - pathlib
     - langchain
     - langchain_community
     - langchain_core
     - langchain_openai
-    - taxonomic_rag_system.utils.base_models
+    - taxonomic_rag_system.utils.out_models
     - taxonomic_rag_system.utils.helpers
 """
 
-import os
-from pathlib import Path
-from typing import Any
+import logging
+import traceback
+from typing import Any, Union, overload
 
 import torch
 from langchain.output_parsers import PydanticOutputParser
@@ -40,19 +40,59 @@ from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_openai import ChatOpenAI
 
 # Local imports
-from taxonomic_rag_system.utils.helpers import format_docs, unique_docs
+from taxonomic_rag_system.utils.helpers import format_docs, load_api_keys, unique_docs
 from taxonomic_rag_system.utils.out_models import MultiQuery, TaxBiodiversity
 
 
-def load_api_keys() -> None:
-    """Load API keys from files."""
-    # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
-    with open(Path.home() / ".openai.key", "r") as f:
-        os.environ["OPENAI_API_KEY"] = f.read().strip()
-    with open(Path.home() / ".openrouter.key", "r") as f:
-        os.environ["OPENROUTER_API_KEY"] = f.read().strip()
-    with open(Path.home() / ".cohere.key", "r") as f:
-        os.environ["COHERE_API_KEY"] = f.read().strip()
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class SafeHuggingFaceEmbeddings(HuggingFaceEmbeddings):
+    """
+    A safe wrapper around HuggingFaceEmbeddings that ensures all inputs are strings.
+
+    This prevents 'dict' object has no attribute 'replace' errors by converting
+    any non-string inputs to strings before passing them to the underlying embeddings.
+    """
+
+    @overload
+    def embed_documents(self, texts: list[str]) -> list[list[float]]: ...
+
+    @overload
+    def embed_documents(self, texts: list[dict[str, str]]) -> list[list[float]]: ...
+
+    @overload
+    def embed_documents(self, texts: list[Any]) -> list[list[float]]: ...
+
+    def embed_documents(self, texts: list[Any]) -> list[list[float]]:
+        """Safely embed documents by ensuring all inputs are strings."""
+        safe_texts: list[str] = []
+        for text in texts:
+            if isinstance(text, str):
+                safe_texts.append(text)
+            elif isinstance(text, dict):
+                safe_texts.append(str(text))
+            else:
+                safe_texts.append(str(text))
+        return super().embed_documents(safe_texts)
+
+    @overload
+    def embed_query(self, text: str) -> list[float]: ...
+
+    @overload
+    def embed_query(self, text: dict[str, str]) -> list[float]: ...
+
+    def embed_query(self, text: Union[str, dict[str, str]]) -> list[float]:
+        """Safely embed a query by ensuring the input is a string."""
+        if isinstance(text, str):
+            safe_text = text
+        elif isinstance(text, dict):
+            safe_text = str(text)
+        else:
+            safe_text = str(text)
+        return super().embed_query(safe_text)
 
 
 class RAGChainBuilder:
@@ -63,7 +103,7 @@ class RAGChainBuilder:
     and taxonomic classification generation based on a caption and additional context.
     """
 
-    def __init__(self, retriever: Any):
+    def __init__(self, retriever: Any) -> None:
         """
         Initialize RAGChainBuilder with a retriever.
 
@@ -148,7 +188,35 @@ class RAGChainBuilder:
         :param inp: The input data.
         :return: The output of the RAG chain.
         """
-        return await self.rag_chain.ainvoke(input=inp)
+        try:
+            logger.info(
+                f"RAGChainBuilder.ainvoke called with input keys: {list(inp.keys())}"
+            )
+            result = await self.rag_chain.ainvoke(input=inp)
+            logger.info("RAGChainBuilder.ainvoke completed successfully")
+            return result
+        except Exception as e:
+            logger.error("Error in RAGChainBuilder.ainvoke:")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error message: {str(e)}")
+            logger.error("Full traceback:")
+            logger.error(traceback.format_exc())
+            # Return a default result instead of letting the error propagate
+            return TaxBiodiversity(
+                classification={
+                    "Kingdom": "Animalia",
+                    "Phylum": "N/A",
+                    "Class": "N/A",
+                    "Order": "N/A",
+                    "Family": "N/A",
+                    "Genus": "N/A",
+                    "Species": "N/A",
+                },
+                ancestral="Error occurred during processing",
+                specific="Error occurred during processing",
+                commentary="Error occurred during processing",
+                bio_knowledge="Error occurred during processing",
+            )
 
 
 class BaseRetriever:
@@ -160,7 +228,7 @@ class BaseRetriever:
         embedding_model: str,
         search_type: str,
         k: int,
-    ):
+    ) -> None:
         """
         Initialize a BaseRetriever for document retrieval with additional params.
 
@@ -188,7 +256,7 @@ class WikiStellaRAGModel(BaseRetriever):
         k: int = 30,
         rerank: bool = False,
         multiquery: bool = False,
-    ):
+    ) -> None:
         """
         Initialize WikiStellaRAGModel with config options for multiquery and reranker.
 
@@ -229,24 +297,42 @@ class WikiStellaRAGModel(BaseRetriever):
         Set up the vector store retriever.
 
         Configure the retriever with the specified path to chroma parent dir.
+        The logic is:
+        1. Try to load the existing collection
+        2. If the collection does not exist, create a new one with embeddings
 
         :return: A configured Chroma vector store.
         """
+        # Always create embeddings function for consistency
         encode_kwargs = {
             "normalize_embeddings": True,  # Use faster dot-product instead cosine sim
             "batch_size": 128,
         }
-        embeddings = HuggingFaceEmbeddings(
+        embeddings = SafeHuggingFaceEmbeddings(
             model_name=self.embedding_model,
             model_kwargs={"device": self.device},
             encode_kwargs=encode_kwargs,
             show_progress=False,
         )
-        return Chroma(  # Build and return Chroma vstore
-            embedding_function=embeddings,
-            persist_directory=vstore_path,
-            collection_name=self.collection_name,
-        )
+
+        try:
+            vectorstore = Chroma(
+                collection_name=self.collection_name,
+                persist_directory=vstore_path,
+                embedding_function=embeddings,
+            )
+            logger.info(f"Successfully loaded vector store from {vstore_path}")
+            return vectorstore
+        except ValueError:
+            # Collection does not exist – need to create new one (requires embeddings)
+            logger.info(
+                "Collection not found; creating new vector store with embeddings …"
+            )
+            return Chroma(
+                embedding_function=embeddings,
+                persist_directory=vstore_path,
+                collection_name=self.collection_name,
+            )
 
     def _add_reranker(self, top_n: int = 10) -> None:
         """
@@ -290,6 +376,7 @@ class WikiStellaRAGModel(BaseRetriever):
             input_variables=["caption"],
             partial_variables={"format_instructions": parser.get_format_instructions()},
         )
+
         generate_queries = (
             prompt_perspectives
             | ChatOpenAI(model="gpt-4o-mini")

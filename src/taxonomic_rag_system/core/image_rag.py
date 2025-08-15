@@ -40,8 +40,6 @@ event loop to execute its methods.
 
 import asyncio
 import gc
-import os
-from pathlib import Path
 from typing import Any, Optional, TypedDict, Union
 
 import torch
@@ -51,7 +49,7 @@ from openai import AsyncOpenAI
 from taxonomic_rag_system.utils.evaluator import (
     RareSpeciesEvaluator,
 )
-from taxonomic_rag_system.utils.helpers import simple_string_output
+from taxonomic_rag_system.utils.helpers import load_api_keys, simple_string_output
 from taxonomic_rag_system.utils.image_processor import ImageProcessor
 from taxonomic_rag_system.utils.out_models import TaxBiodiversity
 from taxonomic_rag_system.utils.retriever import WikiStellaRAGModel
@@ -65,15 +63,6 @@ class _QueryImageOutput(TypedDict):
     caption: str
     results: TaxBiodiversity
     context: str
-
-
-def load_api_keys() -> None:
-    """Load API keys from files."""
-    # Set API key env variables w/ `.openai.key` and `.openrouter.key` files in home dir
-    with open(Path.home() / ".openai.key", "r") as f:
-        os.environ["OPENAI_API_KEY"] = f.read().strip()
-    with open(Path.home() / ".openrouter.key", "r") as f:
-        os.environ["OPENROUTER_API_KEY"] = f.read().strip()
 
 
 class ImageRAGModel:
@@ -122,11 +111,14 @@ class ImageRAGModel:
         cap: Optional[AsyncOpenAI] = None,
         model: str = "gpt-4o",
     ):
+        load_api_keys()
         if cap is None:
             cap = AsyncOpenAI()
-        load_api_keys()
         self.image_processor = ImageProcessor()
-        self.captioner = DescriptiveCaptioner(cap=cap, model=model)
+        self.captioner = DescriptiveCaptioner(
+            cap=cap,
+            model=model,
+        )
         self.rag_model = WikiStellaRAGModel(
             vstore_path=vstore_path,
             collection_name=collection_name,
@@ -193,9 +185,7 @@ class ImageRAGModel:
             results = await self.rag_model.ainvoke(caption=caption)
             if context:
                 docs = await self.rag_model.aretrieve(caption=caption)
-                cntxt = "\n\n".join(
-                    [f"{d.metadata}\n{d.page_content}" for d in docs]
-                )  # Convert to string
+                cntxt = "\n\n".join([f"{d.metadata}\n{d.page_content}" for d in docs])
         except Exception as er:
             print(f"{er} occurred")
             caption = ""
@@ -252,11 +242,16 @@ class ImageRAGModel:
         )
         return await self.captioner.generate_caption(image_b64)
 
-    async def rarespecies_dataset_run(self, verbose: int = 1) -> list[dict[str, Any]]:
+    async def rarespecies_dataset_run(
+        self, interval: tuple[int, int] = (0, 999), verbose: int = 1
+    ) -> list[dict[str, Any]]:
         """
         Asynchronously processes a dataset of rare species images using a RAG system.
 
         Args:
+            interval (tuple[int, int], optional): The range of indices to process from
+                the dataset.
+                Defaults to (0, 999).
             verbose (int, optional): Verbosity level for logging and debugging.
                 - 0: No output.
                 - 1: Minimal output (default).
@@ -283,7 +278,7 @@ class ImageRAGModel:
             - Taxonomy levels - "Phylum", "Class", "Order", "Family", "Genus", "Species"
             - Verbose levels >1 provide detailed logging for debugging purposes.
         """
-        dataloader = RareSpeciesEvaluator().dataloader()
+        dataloader = RareSpeciesEvaluator(interval=interval).dataloader()
         # Processing loop for batch of images
         outputs = []
         for image_objs, class_dicts in dataloader:
@@ -426,12 +421,15 @@ class NaiveVLModel:
         return guess_class
 
     async def rarespecies_dataset_run(
-        self, verbose: int = 1
+        self, interval: tuple[int, int] = (0, 999), verbose: int = 1
     ) -> list[dict[str, Union[str, dict[str, Union[str, Any]]]]]:
         """
         Pass over the rare-species dataset.
 
         Args:
+            interval (tuple[int, int], optional): The range of indices to process from
+                the dataset.
+                Defaults to (0, 999).
             verbose (int, optional): Verbosity level for logging. Defaults to 1.
                 - If `verbose > 1`, detailed taxonomy level comparisons will be printed.
 
@@ -442,7 +440,7 @@ class NaiveVLModel:
                 - "guess_class": A dict of predicted taxonomy levels.
                 - "RSID": The unique identifier for the rare species.
         """
-        dataloader = RareSpeciesEvaluator().dataloader()
+        dataloader = RareSpeciesEvaluator(interval=interval).dataloader()
         # Processing loop for batch of images
         outputs = []
         for image_objs, class_dicts in dataloader:
