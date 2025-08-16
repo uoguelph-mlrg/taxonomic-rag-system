@@ -50,6 +50,7 @@ from taxonomic_rag_system.utils.helpers import (
     write_preds_to_csv,
     write_sample_binary_accuracy_csv,
     write_rank_attempts_csv,
+    filter_nonempty_results,
 )
 
 
@@ -157,8 +158,6 @@ async def main() -> None:
         # Write filtered results (exclude samples with empty predictions) to outputs_uq_data_collection/
         uq_dir = str((Path(output_path).parent / "outputs_uq_data_collection/").as_posix())
         Path(uq_dir).mkdir(parents=True, exist_ok=True)
-
-        from taxonomic_rag_system.utils.helpers import filter_nonempty_results, extract_tax_metrics_rs
 
         filtered_results = filter_nonempty_results(rarespp_predictions)
         overalls_uq, preds_uq = extract_tax_metrics_rs(filtered_results, verbose=True)
