@@ -110,6 +110,7 @@ class ImageRAGModel:
         multiquery: bool = False,
         cap: Optional[AsyncOpenAI] = None,
         model: str = "gpt-4o",
+        prompt_log_path: Optional[str] = None,
     ):
         load_api_keys()
         if cap is None:
@@ -127,6 +128,7 @@ class ImageRAGModel:
             k=k,
             rerank=rerank,
             multiquery=multiquery,
+            log_path=prompt_log_path,
         )
 
     def get_device(self) -> torch.device:
@@ -146,6 +148,7 @@ class ImageRAGModel:
         image_path: Optional[str] = None,
         context: bool = False,
         verbose: int = 1,
+        rsid: Optional[str] = None,
     ) -> _QueryImageOutput:
         """
         Asynchronously generates a caption, retrieves, and optionally adds context.
@@ -182,7 +185,7 @@ class ImageRAGModel:
             caption = await self.captioner.generate_caption(image_b64)
             if verbose > 0:
                 print("querying...")
-            results = await self.rag_model.ainvoke(caption=caption)
+            results = await self.rag_model.ainvoke(caption=caption, RSID=rsid)
             if context:
                 docs = await self.rag_model.aretrieve(caption=caption)
                 cntxt = "\n\n".join([f"{d.metadata}\n{d.page_content}" for d in docs])
@@ -282,7 +285,7 @@ class ImageRAGModel:
             tasks, true_classes, batch = [], [], []
             # RAG on each caption
             for img_obj, class_dict in zip(image_objs, class_dicts):
-                tasks.append(self.query_image(image_obj=img_obj, context=False))
+                tasks.append(self.query_image(image_obj=img_obj, context=False, rsid=class_dict.get("RSID")))
                 true_classes.append(class_dict)
             rag_responses = await asyncio.gather(*tasks)
             torch.cuda.empty_cache()

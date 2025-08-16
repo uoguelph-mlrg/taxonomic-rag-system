@@ -72,6 +72,7 @@ from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import Faithfulness, ResponseRelevancy
 from sklearn.metrics import accuracy_score, f1_score
 from sklearn.preprocessing import LabelEncoder
+import json
 
 
 def load_api_keys() -> None:
@@ -733,6 +734,93 @@ def extract_tax_metrics_rs(
         except Exception:
             guess_class["BinaryAccuracy"] = 0
     return class_report, guess_classes
+
+
+def filter_nonempty_results(result_obj: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Filter out samples whose predicted taxonomy is empty across all ranks.
+
+    A sample is kept if its "guess_class" contains at least one of the canonical
+    taxonomy ranks: Kingdom, Phylum, Class, Order, Family, Genus, Species.
+    """
+    canonical_ranks = {"Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"}
+    filtered: List[Dict[str, Any]] = []
+    for sample in result_obj:
+        guess = sample.get("guess_class", {}) or {}
+        has_any_rank = any(rank in guess for rank in canonical_ranks)
+        if has_any_rank:
+            filtered.append(sample)
+    return filtered
+
+
+def validate_uq_outputs(
+    predictions_csv: str,
+    sample_binary_csv: str,
+    prompt_jsonl_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Validate consistency of filtered UQ outputs.
+
+    Checks:
+    - Row counts of predictions vs. sample-binary CSVs match
+    - If both have "RSID" columns, their RSID sets match exactly
+    - If prompt_jsonl_path is provided, ensure RSIDs in predictions are a subset
+      of RSIDs in JSONL log
+    Returns a dict with keys: {"ok": bool, "messages": List[str]}.
+    """
+    messages: List[str] = []
+    ok = True
+
+    try:
+        preds_df = pd.read_csv(predictions_csv)
+    except Exception as e:
+        return {"ok": False, "messages": [f"Failed to read predictions CSV: {e}"]}
+    try:
+        bin_df = pd.read_csv(sample_binary_csv)
+    except Exception as e:
+        return {"ok": False, "messages": [f"Failed to read sample-binary CSV: {e}"]}
+
+    if len(preds_df) != len(bin_df):
+        ok = False
+        messages.append(
+            f"Row count mismatch: predictions={len(preds_df)} vs sample_binary={len(bin_df)}"
+        )
+
+    if "RSID" in preds_df.columns and "RSID" in bin_df.columns:
+        preds_rsids = set(preds_df["RSID"].astype(str))
+        bin_rsids = set(bin_df["RSID"].astype(str))
+        if preds_rsids != bin_rsids:
+            ok = False
+            only_in_preds = sorted(preds_rsids - bin_rsids)
+            only_in_bin = sorted(bin_rsids - preds_rsids)
+            if only_in_preds:
+                messages.append(f"RSIDs only in predictions: {only_in_preds[:20]}" + (" ..." if len(only_in_preds) > 20 else ""))
+            if only_in_bin:
+                messages.append(f"RSIDs only in sample_binary: {only_in_bin[:20]}" + (" ..." if len(only_in_bin) > 20 else ""))
+
+    if prompt_jsonl_path:
+        try:
+            jsonl_rsids: set[str] = set()
+            with open(prompt_jsonl_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        obj = json.loads(line)
+                        rsid_val = obj.get("RSID")
+                        if rsid_val is not None and str(rsid_val) != "":
+                            jsonl_rsids.add(str(rsid_val))
+                    except Exception:
+                        continue
+            if "RSID" in preds_df.columns:
+                preds_rsids = set(preds_df["RSID"].astype(str))
+                if not preds_rsids.issubset(jsonl_rsids):
+                    ok = False
+                    missing = sorted(preds_rsids - jsonl_rsids)
+                    messages.append(
+                        f"Some prediction RSIDs not found in JSONL log: {missing[:20]}" + (" ..." if len(missing) > 20 else "")
+                    )
+        except Exception as e:
+            ok = False
+            messages.append(f"Failed to read/parse JSONL log: {e}")
+
+    return {"ok": ok, "messages": messages}
 
 
 def write_preds_to_csv(guess_classes: List[Dict[str, str]], csv_filename: str) -> None:

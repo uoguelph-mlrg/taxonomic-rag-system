@@ -27,6 +27,7 @@ Run this script to evaluate the Naive VLM on the rare species dataset and write 
 import argparse
 import asyncio
 import datetime
+import json
 from pathlib import Path
 
 from taxonomic_rag_system.core.image_rag import NaiveVLModel
@@ -36,6 +37,7 @@ from taxonomic_rag_system.utils.helpers import (
     write_preds_to_csv,
     write_sample_binary_accuracy_csv,
     write_rank_attempts_csv,
+    filter_nonempty_results,
 )
 
 
@@ -98,6 +100,9 @@ async def main() -> None:
     write = args.write
     interval = (args.interval_start, args.interval_end)
 
+    current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+    current_time = datetime.datetime.now().strftime("%H-%M-%S")
+
     # 1. Build Model, 2. RareSpecies Run, 3. Extract Results
     naive_model = NaiveVLModel(model="google/gemini-2.0-flash-001")
     rarespp_predictions = await naive_model.rarespecies_dataset_run(interval=interval, verbose=2)
@@ -108,8 +113,6 @@ async def main() -> None:
         if output_path:
             Path(output_path).mkdir(parents=True, exist_ok=True)
 
-        current_date = datetime.datetime.now().strftime("%Y-%m-%d")  # Grab current date
-        current_time = datetime.datetime.now().strftime("%H-%M-%S")  # Grab current time
         final_metrics_csv_name = str(
             output_path
             + f"RS_naiveVLM_gemini_tax_metrics_{current_date}_{current_time}.csv"
@@ -132,6 +135,60 @@ async def main() -> None:
         write_overall_metrics(final_metrics_csv_name, overalls)
         write_sample_binary_accuracy_csv(preds, sample_binary_csv_name)
         write_rank_attempts_csv(rank_attempts_csv_name, overalls, total_samples=len(preds))
+
+        # Write filtered results (exclude samples with empty predictions) to outputs_uq_data_collection/
+        uq_dir = str((Path(output_path).parent / "outputs_uq_data_collection/").as_posix())
+        Path(uq_dir).mkdir(parents=True, exist_ok=True)
+
+        overalls_uq, preds_uq = extract_tax_metrics(filter_nonempty_results(rarespp_predictions), verbose=True)
+        # Enrich preds_uq with RSID from filtered_results for downstream CSV writers
+        rsids_uq = [s.get("RSID") for s in filter_nonempty_results(rarespp_predictions)]
+        for g, r in zip(preds_uq, rsids_uq):
+            g["RSID"] = r
+
+        final_metrics_csv_name_uq = str(
+            uq_dir
+            + f"RS_naiveVLM_gemini_tax_metrics_{current_date}_{current_time}.csv"
+        )
+        predictions_csv_name_uq = str(
+            uq_dir
+            + f"RS_naiveVLM_gemini_predictions_{current_date}_{current_time}.csv"
+        )
+        sample_binary_csv_name_uq = str(
+            uq_dir
+            + f"RS_naiveVLM_gemini_sample_binary_accuracy_{current_date}_{current_time}.csv"
+        )
+        rank_attempts_csv_name_uq = str(
+            uq_dir
+            + f"RS_naiveVLM_gemini_rank_attempts_{current_date}_{current_time}.csv"
+        )
+        write_preds_to_csv(preds_uq, predictions_csv_name_uq)
+        write_overall_metrics(final_metrics_csv_name_uq, overalls_uq)
+        write_sample_binary_accuracy_csv(preds_uq, sample_binary_csv_name_uq)
+        write_rank_attempts_csv(rank_attempts_csv_name_uq, overalls_uq, total_samples=len(preds_uq))
+
+        # Write filtered JSONL with prompt/response pairs to UQ directory
+        try:
+            filtered_rsids = {r for r in rsids_uq if r}
+            candidate = str(
+                (Path(output_path) / f"RS_naiveVLM_gemini_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix()
+            )
+            if Path(candidate).exists():
+                uq_jsonl_name = str(
+                    (Path(uq_dir) / f"RS_naiveVLM_gemini_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix()
+                )
+                with open(candidate, "r", encoding="utf-8") as src, open(
+                    uq_jsonl_name, "w", encoding="utf-8"
+                ) as dst:
+                    for line in src:
+                        try:
+                            obj = json.loads(line)
+                        except Exception:
+                            continue
+                        if obj.get("RSID") in filtered_rsids:
+                            dst.write(line)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

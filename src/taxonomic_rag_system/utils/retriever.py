@@ -144,8 +144,8 @@ class RAGChainBuilder:
         )
         self.prompt = self._prompt_construction()
         self.rag_chain = self._build_chain(retriever)
-        # Optional path to save prompt/response pairs in JSONL format, default to current working directory
-        self._log_path: str | None = str(log_path) if log_path is not None else str(Path.cwd() / "prompt_response_pairs.jsonl")
+        # Optional path to save prompt/response pairs in JSONL format; disabled by default
+        self._log_path: str | None = str(log_path) if log_path else None
         # Store retriever for possible prompt reconstruction/logging
         self._retriever = retriever
     
@@ -185,11 +185,13 @@ class RAGChainBuilder:
         :param inp: The input data.
         :return: The output of the RAG chain.
         """
-        # Prompt/Response logging 
-        prompt_str = self.prompt.format(**inp)
+        # Prompt/Response logging
+        # Use only required keys for formatting to avoid extra keys issues
+        prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
+        prompt_str = self.prompt.format(**prompt_inputs)
         result = self.rag_chain.invoke(input=inp)
-        # Log prompt/response pair
-        self._log_pair(prompt_str, result)
+        # Log prompt/response pair with optional RSID
+        self._log_pair(prompt_str, result, rsid=inp.get("RSID"))
         # Return parsed result
         return result
 
@@ -203,10 +205,11 @@ class RAGChainBuilder:
         try:
             print(f"RAGChainBuilder.ainvoke called with input keys: {list(inp.keys())}")
             # Prompt/Response logging
-            prompt_str = self.prompt.format(**inp)
+            prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
+            prompt_str = self.prompt.format(**prompt_inputs)
             result = await self.rag_chain.ainvoke(input=inp)
-            # Log prompt/response pair
-            self._log_pair(prompt_str, result)
+            # Log prompt/response pair with optional RSID
+            self._log_pair(prompt_str, result, rsid=inp.get("RSID"))
             # Return parsed result
             print("RAGChainBuilder.ainvoke completed successfully")
             return result
@@ -235,7 +238,7 @@ class RAGChainBuilder:
                 bio_knowledge="Error occurred during processing",
             )
     
-    def _log_pair(self, prompt: str, response: Any) -> None:
+    def _log_pair(self, prompt: str, response: Any, rsid: str | None = None) -> None:
         """Append a prompt/response pair to the configured JSONL log file (if any).
 
         Each line in the file is a JSON object with keys ``prompt`` and ``response``.
@@ -256,7 +259,7 @@ class RAGChainBuilder:
                 resp_obj = str(response)
 
             with open(self._log_path, "a", encoding="utf-8") as fp:
-                json_line = json.dumps({"prompt": prompt, "response": resp_obj}, ensure_ascii=False)
+                json_line = json.dumps({"RSID": rsid, "prompt": prompt, "response": resp_obj}, ensure_ascii=False)
                 fp.write(json_line + "\n")
         except Exception as log_err:
             # Do not crash the main pipeline for logging errors; just warn.
@@ -299,6 +302,7 @@ class WikiStellaRAGModel(BaseRetriever):
         k: int = 30,
         rerank: bool = False,
         multiquery: bool = False,
+        log_path: str | None = None,
     ) -> None:
         """
         Initialize WikiStellaRAGModel with config options for multiquery and reranker.
@@ -333,7 +337,7 @@ class WikiStellaRAGModel(BaseRetriever):
             self._add_multiquery()
         if rerank:
             self._add_reranker()
-        self.model = RAGChainBuilder(self.retriever)
+        self.model = RAGChainBuilder(self.retriever, log_path=log_path)
 
     def _set_up_retriever(self, vstore_path: str) -> Chroma:
         """
@@ -447,7 +451,7 @@ class WikiStellaRAGModel(BaseRetriever):
         """
         return await self.retriever.ainvoke(input=caption)
 
-    def invoke(self, caption: str) -> TaxBiodiversity:
+    def invoke(self, caption: str, RSID: str | None = None) -> TaxBiodiversity:
         """
         Invoke the RAG model synchronously using the given caption.
 
@@ -460,10 +464,12 @@ class WikiStellaRAGModel(BaseRetriever):
         formatted_docs = format_docs(docs)
         # Create the input for the RAG model
         inp = {"context": formatted_docs, "caption": caption}
+        if RSID is not None:
+            inp["RSID"] = RSID
         # Invoke RAG model and return results
         return self.model.invoke(inp=inp)
 
-    async def ainvoke(self, caption: str) -> TaxBiodiversity:
+    async def ainvoke(self, caption: str, RSID: str | None = None) -> TaxBiodiversity:
         """
         Invoke the RAG model asynchronously using the given caption.
 
@@ -476,5 +482,7 @@ class WikiStellaRAGModel(BaseRetriever):
         formatted_docs = format_docs(docs)
         # Create the input for the RAG model
         inp = {"context": formatted_docs, "caption": caption}
+        if RSID is not None:
+            inp["RSID"] = RSID
         # Invoke RAG model and return results
         return await self.model.ainvoke(inp=inp)
