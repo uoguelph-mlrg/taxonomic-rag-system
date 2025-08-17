@@ -167,24 +167,16 @@ async def main() -> None:
         write_rank_attempts_csv(rank_attempts_csv_name, overalls, total_samples=len(preds))
 
         # Write filtered results (exclude samples with empty predictions) to outputs_uq_data_collection/
-        uq_dir = str((Path(output_path).parent / "outputs_uq_data_collection/").as_posix())
-        Path(uq_dir).mkdir(parents=True, exist_ok=True)
+        uq_dir_path = Path(output_path).parent / "outputs_uq_data_collection"
+        uq_dir_path.mkdir(parents=True, exist_ok=True)
 
         filtered_results = filter_nonempty_results(rarespp_predictions)
         overalls_uq, preds_uq = extract_tax_metrics_rs(filtered_results, verbose=True)
 
-        final_metrics_csv_name_uq = str(
-            uq_dir + f"RS_advRAG_tax_metrics_{current_date}_{current_time}.csv"
-        )
-        predictions_csv_name_uq = str(
-            uq_dir + f"RS_advRAG_predictions_{current_date}_{current_time}.csv"
-        )
-        sample_binary_csv_name_uq = str(
-            uq_dir + f"RS_advRAG_sample_binary_accuracy_{current_date}_{current_time}.csv"
-        )
-        rank_attempts_csv_name_uq = str(
-            uq_dir + f"RS_advRAG_rank_attempts_{current_date}_{current_time}.csv"
-        )
+        final_metrics_csv_name_uq = str((uq_dir_path / f"RS_advRAG_tax_metrics_{current_date}_{current_time}.csv").as_posix())
+        predictions_csv_name_uq = str((uq_dir_path / f"RS_advRAG_predictions_{current_date}_{current_time}.csv").as_posix())
+        sample_binary_csv_name_uq = str((uq_dir_path / f"RS_advRAG_sample_binary_accuracy_{current_date}_{current_time}.csv").as_posix())
+        rank_attempts_csv_name_uq = str((uq_dir_path / f"RS_advRAG_rank_attempts_{current_date}_{current_time}.csv").as_posix())
         write_preds_to_csv(preds_uq, predictions_csv_name_uq)
         write_overall_metrics(final_metrics_csv_name_uq, overalls_uq)
         write_sample_binary_accuracy_csv(preds_uq, sample_binary_csv_name_uq)
@@ -193,9 +185,7 @@ async def main() -> None:
         # Write filtered JSONL with prompt/response pairs to UQ directory (subset by RSID)
         try:
             filtered_rsids = {s.get("RSID") for s in filtered_results if s.get("RSID")}
-            uq_jsonl_name = str(
-                uq_dir + f"RS_advRAG_prompt_response_pairs_{current_date}_{current_time}.jsonl"
-            )
+            uq_jsonl_name = str((uq_dir_path / f"RS_advRAG_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix())
             with open(prompt_jsonl_name, "r", encoding="utf-8") as src, open(
                 uq_jsonl_name, "w", encoding="utf-8"
             ) as dst:

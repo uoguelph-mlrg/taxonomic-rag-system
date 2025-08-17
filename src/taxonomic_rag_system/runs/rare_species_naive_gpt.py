@@ -138,8 +138,8 @@ async def main() -> None:
         write_rank_attempts_csv(rank_attempts_csv_name, overalls, total_samples=len(preds))
 
         # Write filtered results (exclude samples with empty predictions) to outputs_uq_data_collection/
-        uq_dir = str((Path(output_path).parent / "outputs_uq_data_collection/").as_posix())
-        Path(uq_dir).mkdir(parents=True, exist_ok=True)
+        uq_dir_path = Path(output_path).parent / "outputs_uq_data_collection"
+        uq_dir_path.mkdir(parents=True, exist_ok=True)
 
         filtered_results = filter_nonempty_results(rarespp_predictions)
         overalls_uq, preds_uq = extract_tax_metrics(filtered_results, verbose=True)
@@ -148,22 +148,10 @@ async def main() -> None:
         for g, r in zip(preds_uq, rsids_uq):
             g["RSID"] = r
 
-        final_metrics_csv_name_uq = str(
-            uq_dir
-            + f"RS_naiveVLM_gpt_tax_metrics_{current_date}_{current_time}.csv"
-        )
-        predictions_csv_name_uq = str(
-            uq_dir
-            + f"RS_naiveVLM_gpt_predictions_{current_date}_{current_time}.csv"
-        )
-        sample_binary_csv_name_uq = str(
-            uq_dir
-            + f"RS_naiveVLM_gpt_sample_binary_accuracy_{current_date}_{current_time}.csv"
-        )
-        rank_attempts_csv_name_uq = str(
-            uq_dir
-            + f"RS_naiveVLM_gpt_rank_attempts_{current_date}_{current_time}.csv"
-        )
+        final_metrics_csv_name_uq = str((uq_dir_path / f"RS_naiveVLM_gpt_tax_metrics_{current_date}_{current_time}.csv").as_posix())
+        predictions_csv_name_uq = str((uq_dir_path / f"RS_naiveVLM_gpt_predictions_{current_date}_{current_time}.csv").as_posix())
+        sample_binary_csv_name_uq = str((uq_dir_path / f"RS_naiveVLM_gpt_sample_binary_accuracy_{current_date}_{current_time}.csv").as_posix())
+        rank_attempts_csv_name_uq = str((uq_dir_path / f"RS_naiveVLM_gpt_rank_attempts_{current_date}_{current_time}.csv").as_posix())
         write_preds_to_csv(preds_uq, predictions_csv_name_uq)
         write_overall_metrics(final_metrics_csv_name_uq, overalls_uq)
         write_sample_binary_accuracy_csv(preds_uq, sample_binary_csv_name_uq)
@@ -182,7 +170,7 @@ async def main() -> None:
             )
             if Path(candidate).exists():
                 uq_jsonl_name = str(
-                    (Path(uq_dir) / f"RS_naiveVLM_gpt_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix()
+                    (uq_dir_path / f"RS_naiveVLM_gpt_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix()
                 )
                 with open(candidate, "r", encoding="utf-8") as src, open(
                     uq_jsonl_name, "w", encoding="utf-8"
