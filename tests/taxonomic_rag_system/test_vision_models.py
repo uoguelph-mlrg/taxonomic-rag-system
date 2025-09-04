@@ -9,31 +9,15 @@ Test cases use mock objects to simulate the behavior of external dependencies.
 """
 
 import json
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from taxonomic_rag_system.utils.out_models import Caption
 from taxonomic_rag_system.utils.vision_models import (
     DescriptiveCaptioner,
     TaxClassifierVLM,
 )
-
-
-@pytest.fixture(autouse=True)
-def mock_api_key_files():
-    """Mock the behavior of opening files to read API keys."""
-    with (
-        patch("builtins.open", mock_open(read_data="mock_api_key")),
-        patch.dict(
-            "os.environ",
-            {
-                "OPENAI_API_KEY": "mock_openai_key",
-                "OPENROUTER_API_KEY": "mock_openrouter_key",
-                "COHERE_API_KEY": "mock_cohere_key",
-            },
-        ),
-    ):
-        yield
 
 
 @pytest.mark.asyncio
@@ -91,11 +75,10 @@ async def test_tax_classifier_vlm_error_handling():
 async def test_descriptive_captioner_generate_caption():
     """Test caption generation using DescriptiveCaptioner."""
     # Mock the instructor client response
-    mock_caption_obj = MagicMock()
-    mock_caption_obj.caption = "Detailed mock caption of the organism"
+    mock_caption_obj = Caption(caption="Detailed mock caption of the organism")
 
     mock_client = AsyncMock()
-    mock_client.chat.completions.create.return_value = mock_caption_obj
+    mock_client.chat.completions.create = AsyncMock(return_value=mock_caption_obj)
 
     mock_cap = AsyncMock()
 

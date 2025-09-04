@@ -23,3 +23,14 @@ wheels/
 # coverage files
 .coverage
 coverage.xml
+
+# Claude local settings
+.claude/settings.local.json
+
+# Downloaded papers
+taxonomic_paper.pdf
+
+# API keys (should be in home directory, but prevent accidental commits)
+.openai.key
+.cohere.key
+.openrouter.key

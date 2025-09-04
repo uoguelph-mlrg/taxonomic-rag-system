@@ -105,7 +105,9 @@ async def main() -> None:
     # 1. Build Model
     naive_model = NaiveVLModel(model="gpt-4o", openrouter=False)
     # 2. RareSpecies Run
-    rarespp_predictions = await naive_model.rarespecies_dataset_run(interval=interval, verbose=2)
+    rarespp_predictions = await naive_model.rarespecies_dataset_run(
+        interval=interval, verbose=2
+    )
     # 3. Extract Results
     overalls, preds = extract_tax_metrics(rarespp_predictions, verbose=True)
 

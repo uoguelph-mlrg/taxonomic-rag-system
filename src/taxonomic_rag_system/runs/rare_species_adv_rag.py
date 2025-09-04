@@ -138,7 +138,9 @@ async def main() -> None:
     )
     print(f"Device: {model.get_device()}")
     # 2. RareSpecies Run
-    rarespp_predictions = await model.rarespecies_dataset_run(interval=interval, verbose=2)
+    rarespp_predictions = await model.rarespecies_dataset_run(
+        interval=interval, verbose=2
+    )
     # 3. Extract Results
     overalls, preds = extract_tax_metrics_rs(rarespp_predictions, verbose=True)
 

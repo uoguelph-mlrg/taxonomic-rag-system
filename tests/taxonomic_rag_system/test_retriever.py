@@ -1,33 +1,92 @@
-"""Module of tests for retriever classes in `taxonomic_rag_system` project."""
+"""
+Unit and integration tests for retriever classes in the taxonomic_rag_system project.
+
+This module tests the WikiStellaRAGModel class which handles document retrieval
+and RAG pipeline construction for taxonomic classification. Tests include both
+initialization validation and integration pipeline testing.
+
+Tested classes:
+- `WikiStellaRAGModel`: RAG model using Stella embeddings and Chroma vector store
+
+Test coverage:
+- Model initialization with various parameters (collection name, embedding model,
+  search type)
+- Integration pipeline testing with mocked dependencies (Chroma, embeddings,
+  RAG chain)
+- Document retrieval and response generation functionality
+
+Integration tests use mocked external dependencies to ensure reproducible
+results without requiring actual vector stores or API calls.
+"""
+
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from langchain_core.documents import Document
 
+from taxonomic_rag_system.utils.out_models import TaxBiodiversity
 from taxonomic_rag_system.utils.retriever import WikiStellaRAGModel
 
 
 def test_wiki_stella_rag_model_initialization():
     """Test initialization of WikiStellaRAGModel."""
-    model = WikiStellaRAGModel(
-        vstore_path="/mock/path",
-        collection_name="mock_collection",
-        embedding_model="mock_model",
-        search_type="similarity",
-        k=10,
-    )
-    assert model.collection_name == "mock_collection"
-    assert model.k == 10
+    with (
+        patch("taxonomic_rag_system.utils.retriever.Chroma"),
+        patch("taxonomic_rag_system.utils.retriever.SafeHuggingFaceEmbeddings"),
+        patch("taxonomic_rag_system.utils.retriever.RAGChainBuilder"),
+    ):
+        model = WikiStellaRAGModel(
+            vstore_path="/mock/path",
+            collection_name="mock_collection",
+            embedding_model="mock_model",
+            search_type="similarity",
+            k=10,
+        )
+        assert model.collection_name == "mock_collection"
+        assert model.k == 10
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration_test()
-async def test_retriever_pipeline(mock_rag_model):
+async def test_retriever_pipeline():
     """Test the retriever pipeline with a mock RAG model."""
-    retriever = WikiStellaRAGModel(
-        vstore_path="/mock/path",
-        collection_name="mock_collection",
-        embedding_model="mock_model",
-    )
-    retriever.model = mock_rag_model
+    with (
+        patch("taxonomic_rag_system.utils.retriever.Chroma"),
+        patch("taxonomic_rag_system.utils.retriever.SafeHuggingFaceEmbeddings"),
+        patch("taxonomic_rag_system.utils.retriever.RAGChainBuilder") as mock_builder,
+    ):
+        # Mock the RAG chain builder
+        mock_model = AsyncMock()
+        mock_model.ainvoke.return_value = TaxBiodiversity(
+            classification={
+                "Kingdom": "Animalia",
+                "Phylum": "N/A",
+                "Class": "N/A",
+                "Order": "N/A",
+                "Family": "N/A",
+                "Genus": "N/A",
+                "Species": "N/A",
+            },
+            ancestral="Mock ancestral info",
+            specific="Mock specific info",
+            commentary="Mock commentary",
+            bio_knowledge="Mock bio knowledge",
+        )
+        mock_builder.return_value = mock_model
 
-    result = await retriever.ainvoke("Mock caption")
-    assert result["classification"]["Kingdom"] == "Animalia"
+        # Create the retriever instance
+        retriever = WikiStellaRAGModel(
+            vstore_path="/mock/path",
+            collection_name="mock_collection",
+            embedding_model="mock_model",
+        )
+
+        # Mock the retriever's ainvoke method directly to avoid the aretrieve call
+        mock_retriever = AsyncMock()
+        mock_retriever.ainvoke.return_value = [
+            Document(page_content="Mock context", metadata={"source": "test"})
+        ]
+        retriever.retriever = mock_retriever
+
+        result = await retriever.ainvoke("Mock caption")
+        assert result.classification["Kingdom"] == "Animalia"

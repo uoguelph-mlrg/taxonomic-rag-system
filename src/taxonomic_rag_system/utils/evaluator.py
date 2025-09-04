@@ -50,7 +50,7 @@ from torch.utils.data import DataLoader, Dataset
 from taxonomic_rag_system.utils.helpers import custom_collate_fn
 
 
-class RareSpeciesImageClassDataset(Dataset):
+class RareSpeciesImageClassDataset(Dataset[Tuple[Any, Dict[str, Any]]]):
     """
     A PyTorch Dataset for loading and processing images of rare species.
 
@@ -89,9 +89,7 @@ class RareSpeciesImageClassDataset(Dataset):
         processed_ds = ds.map(process_row_arthropod)
         good_ds = processed_ds.filter(lambda example: example["image"] is not None)
         print(f"Post-filter LENGTH: {good_ds.num_rows}")
-        self.img_output_pairs = list(
-            zip(good_ds["image"], good_ds["class_dict"])
-        )
+        self.img_output_pairs = list(zip(good_ds["image"], good_ds["class_dict"]))
 
     def __len__(self) -> int:
         """
@@ -133,9 +131,13 @@ class RareSpeciesEvaluator:
 
     def __init__(self, interval: tuple[int, int] = (0, 999)) -> None:
         """Initialize the RareSpeciesEvaluator with a dataset of rare species images."""
-        self.dataset = RareSpeciesImageClassDataset(interval=interval)
+        self.dataset: Dataset[Tuple[Any, Dict[str, Any]]] = (
+            RareSpeciesImageClassDataset(interval=interval)
+        )
 
-    def dataloader(self, batch_size: int = 16) -> DataLoader:
+    def dataloader(
+        self, batch_size: int = 16
+    ) -> DataLoader[Tuple[Any, Dict[str, Any]]]:
         """
         Create a dataloader for the rare species dataset.
 

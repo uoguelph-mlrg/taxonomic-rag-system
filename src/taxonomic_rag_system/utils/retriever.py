@@ -24,6 +24,7 @@ Dependencies:
 """
 
 import logging
+import traceback
 from typing import Any, Union, overload
 
 import torch
@@ -203,24 +204,18 @@ class RAGChainBuilder:
         :return: The output of the RAG chain.
         """
         try:
-            print(f"RAGChainBuilder.ainvoke called with input keys: {list(inp.keys())}")
-            # Prompt/Response logging
+            # Prompt/Response logging parity with sync invoke
             prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
             prompt_str = self.prompt.format(**prompt_inputs)
             result = await self.rag_chain.ainvoke(input=inp)
-            # Log prompt/response pair with optional RSID
             self._log_pair(prompt_str, result, rsid=inp.get("RSID"))
-            # Return parsed result
-            print("RAGChainBuilder.ainvoke completed successfully")
             return result
         except Exception as e:
-            import traceback
-
-            print("Error in RAGChainBuilder.ainvoke:")
-            print(f"Error type: {type(e).__name__}")
-            print(f"Error message: {str(e)}")
-            print("Full traceback:")
-            traceback.print_exc()
+            logger.error("Error in RAGChainBuilder.ainvoke:")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error message: {str(e)}")
+            logger.error("Full traceback:")
+            logger.error(traceback.format_exc())
             # Return a default result instead of letting the error propagate
             return TaxBiodiversity(
                 classification={

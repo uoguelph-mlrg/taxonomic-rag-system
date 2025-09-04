@@ -105,7 +105,9 @@ async def main() -> None:
 
     # 1. Build Model, 2. RareSpecies Run, 3. Extract Results
     naive_model = NaiveVLModel(model="google/gemini-2.0-flash-001")
-    rarespp_predictions = await naive_model.rarespecies_dataset_run(interval=interval, verbose=2)
+    rarespp_predictions = await naive_model.rarespecies_dataset_run(
+        interval=interval, verbose=2
+    )
     overalls, preds = extract_tax_metrics(rarespp_predictions, verbose=True)
 
     if write:
