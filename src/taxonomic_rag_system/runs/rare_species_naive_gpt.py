@@ -101,6 +101,10 @@ async def main() -> None:
 
     current_date = datetime.datetime.now().strftime("%Y-%m-%d")
     current_time = datetime.datetime.now().strftime("%H-%M-%S")
+    # JSONL prompt/response log path (align with Simple RAG naming & location)
+    prompt_jsonl_name = str(
+        output_path + f"RS_naiveVLM_gpt_prompt_response_pairs_{current_date}_{current_time}.jsonl"
+    )
 
     # 1. Build Model
     naive_model = NaiveVLModel(model="gpt-4o", openrouter=False)
@@ -139,6 +143,27 @@ async def main() -> None:
         write_sample_binary_accuracy_csv(preds, sample_binary_csv_name)
         write_rank_attempts_csv(rank_attempts_csv_name, overalls, total_samples=len(preds))
 
+        # Write prompt/response JSONL for Naive model (align with Simple RAG behavior)
+        # Note: Uses system prompt (if available) as simplified prompt representation,
+        # paired with response objects containing guess_class predictions for each sample
+        try:
+            # Use the model's system prompt if available; otherwise write an empty prompt
+            prompt_text = getattr(getattr(naive_model, "model", object()), "system_prompt", "")
+            with open(prompt_jsonl_name, "w", encoding="utf-8") as dst:
+                for sample in rarespp_predictions:
+                    try:
+                        rsid_val = sample.get("RSID")
+                        response_obj = {"guess_class": sample.get("guess_class", {})}
+                        json_line = json.dumps(
+                            {"RSID": rsid_val, "prompt": prompt_text, "response": response_obj},
+                            ensure_ascii=False,
+                        )
+                        dst.write(json_line + "\n")
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
         # Write filtered results (exclude samples with empty predictions) to outputs_uq_data_collection/
         uq_dir_path = Path(output_path).parent / "outputs_uq_data_collection"
         uq_dir_path.mkdir(parents=True, exist_ok=True)
@@ -159,31 +184,20 @@ async def main() -> None:
         write_sample_binary_accuracy_csv(preds_uq, sample_binary_csv_name_uq)
         write_rank_attempts_csv(rank_attempts_csv_name_uq, overalls_uq, total_samples=len(preds_uq))
 
-        # Write filtered JSONL with prompt/response pairs to UQ directory
-        # For naive runs there may not be a prompt JSONL; only write if present
+        # Write filtered JSONL with prompt/response pairs to UQ directory (subset by RSID)
         try:
-            # If a JSONL matching naming exists in outputs/, filter it by RSID
-            # Discover any *_prompt_response_pairs_*.jsonl from outputs/ with same timestamp prefix
-            # Not strictly necessary, so keep it best-effort and silent on failure
-            filtered_rsids = {r for r in rsids_uq if r}
-            # Example expected name (if produced upstream): RS_naiveVLM_gpt_prompt_response_pairs_...
-            candidate = str(
-                (Path(output_path) / f"RS_naiveVLM_gpt_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix()
-            )
-            if Path(candidate).exists():
-                uq_jsonl_name = str(
-                    (uq_dir_path / f"RS_naiveVLM_gpt_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix()
-                )
-                with open(candidate, "r", encoding="utf-8") as src, open(
-                    uq_jsonl_name, "w", encoding="utf-8"
-                ) as dst:
-                    for line in src:
-                        try:
-                            obj = json.loads(line)
-                        except Exception:
-                            continue
-                        if obj.get("RSID") in filtered_rsids:
-                            dst.write(line)
+            filtered_rsids = {s.get("RSID") for s in filtered_results if s.get("RSID")}
+            uq_jsonl_name = str((uq_dir_path / f"RS_naiveVLM_gpt_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix())
+            with open(prompt_jsonl_name, "r", encoding="utf-8") as src, open(
+                uq_jsonl_name, "w", encoding="utf-8"
+            ) as dst:
+                for line in src:
+                    try:
+                        obj = json.loads(line)
+                    except Exception:
+                        continue
+                    if obj.get("RSID") in filtered_rsids:
+                        dst.write(line)
         except Exception:
             pass
 
