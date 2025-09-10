@@ -74,6 +74,8 @@ from sklearn.metrics import accuracy_score, f1_score
 from sklearn.preprocessing import LabelEncoder
 import json
 
+RANKS = ["Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"]
+
 
 def load_api_keys() -> None:
     """Load API keys from files.
@@ -867,3 +869,105 @@ def write_preds_to_csv(guess_classes: List[Dict[str, str]], csv_filename: str) -
                 val = "" if val is None else val
                 row.append(val)
             writer.writerow(row)
+
+
+def hierarchical_metrics(
+    true_dicts: List[Dict[str, str]],
+    pred_dicts: List[Dict[str, str]],
+    verbose: bool = True,
+) -> Dict[str, float]:
+    """
+    Calculate hierarchical metrics for taxonomic predictions.
+
+    Compares true taxonomic classifications with predicted classifications and
+    calculates the prediction set's hierarchical precision (hP), hierarchical
+    recall (hR), and hierarchical F1 (hF) [(Snæbjarnarson et al., 2025)](https://arxiv.org/abs/2504.05457).
+
+    Keys in each dict should be the standard Linnaean ranks from Phylum and below,
+    (e.g. "Phylum", "Class", ..., "Species"), but is case-insensitive.
+
+    Args:
+        true_dicts: list[dict[str,str]] mapping rank -> true taxon name.
+        pred_dicts: list[dict[str,str]] mapping rank -> predicted taxon name.
+        verbose (bool, optional): If True, prints these metrics to stdout.
+
+    Returns
+    -------
+        dict[str, float] with keys:
+            - "hp": hierarchical precision
+            - "hr": hierarchical recall
+            - "hf": hierarchical F1
+    """
+    # Normalize
+    ranks = [rank.lower() for rank in RANKS]
+    true_dicts = [
+        {rank.lower(): val for rank, val in true_dict.items()}
+        for true_dict in true_dicts
+    ]
+    pred_dicts = [
+        {rank.lower(): val for rank, val in pred_dict.items()}
+        for pred_dict in pred_dicts
+    ]
+
+    n = len(true_dicts)
+    hp_sum = 0.0
+    hr_sum = 0.0
+
+    print("Before for loop")
+    print("GT:", true_dicts)
+    print("PRED:", pred_dicts)
+
+    count = 0
+    for true_dict, pred_dict in zip(true_dicts, pred_dicts):
+        count += 1
+        print("count:", count)
+        # Build the ancestor paths for true and predicted in a single loop
+        anc_true = []
+        anc_pred = []
+
+        for rank in ranks:
+            true_taxa = true_dict.get(rank, "")
+            pred_taxa = pred_dict.get(rank, "")
+            # Check and append to anc_true
+            if true_taxa.strip():
+                anc_true.append(true_taxa.lower())
+                print(rank, "GT added")
+            else:
+                # Stop adding to anc_true if a rank is missing
+                print(rank, "GT skipped")
+                break
+            # Check and append to anc_pred
+            if pred_taxa.strip():
+                anc_pred.append(pred_taxa.lower())
+                print(rank, "pred added")
+            else:
+                # Stop adding to anc_pred if a rank is missing
+                print(rank, "pred skipped")
+                break
+
+        print("Afer for loop")
+        set_true = set(anc_true)
+        print("GT:", set_true)
+        set_pred = set(anc_pred)
+        print("PRED:", set_pred)
+        inter_size = len(set_true & set_pred)
+
+        # Precision: |intersection| / |predicted path|
+        hp_i = inter_size / len(set_pred) if set_pred else 0.000
+        # Recall: |intersection| / |true path|
+        hr_i = inter_size / len(set_true) if set_true else 0.000
+
+        hp_sum += hp_i
+        hr_sum += hr_i
+
+    # Sum over all examples
+    hp = hp_sum / n
+    hr = hr_sum / n
+    hf = (2 * hp * hr / (hp + hr)) if (hp + hr) > 0 else 0.0
+
+    if verbose:
+        print(f"Hierarchical Precision (hp): {hp:.3f}")
+        print(f"Hierarchical Recall (hr): {hr:.3f}")
+        print(f"Hierarchical F1 (hf): {hf:.3f}")
+
+    return {"hp": hp, "hr": hr, "hf": hf}

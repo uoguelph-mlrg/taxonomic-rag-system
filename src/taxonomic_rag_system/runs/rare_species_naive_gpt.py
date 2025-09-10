@@ -37,7 +37,9 @@ from taxonomic_rag_system.utils.helpers import (
     write_sample_binary_accuracy_csv,
     write_rank_attempts_csv,
     filter_nonempty_results,
+    hierarchical_metrics,
 )
+import json
 
 
 def _parse_arguments() -> argparse.Namespace:
@@ -143,6 +145,34 @@ async def main() -> None:
         write_sample_binary_accuracy_csv(preds, sample_binary_csv_name)
         write_rank_attempts_csv(rank_attempts_csv_name, overalls, total_samples=len(preds))
 
+        # Hierarchical metrics outputs
+        hier_dir_path = Path(output_path).parent / "outputs_hierarchical_metrics"
+        hier_dir_path.mkdir(parents=True, exist_ok=True)
+        hm = hierarchical_metrics(
+            [s.get("true_class", {}) for s in rarespp_predictions],
+            [s.get("guess_class", {}) for s in rarespp_predictions],
+            verbose=True,
+        )
+        hier_metrics_csv = str((hier_dir_path / f"RS_naiveVLM_gpt_hier_metrics_{current_date}_{current_time}.csv").as_posix())
+        with open(hier_metrics_csv, "w", newline="") as f:
+            import csv as _csv
+            w = _csv.writer(f)
+            w.writerow(["Metric", "Value"])
+            for k in ["hp", "hr", "hf"]:
+                w.writerow([k, hm.get(k, "")])
+        import shutil as _shutil
+        _shutil.copy2(final_metrics_csv_name, hier_metrics_csv.replace("hier_metrics", "tax_metrics"))
+        _shutil.copy2(predictions_csv_name, str((hier_dir_path / f"RS_naiveVLM_gpt_predictions_{current_date}_{current_time}.csv").as_posix()))
+        _shutil.copy2(sample_binary_csv_name, str((hier_dir_path / f"RS_naiveVLM_gpt_sample_binary_accuracy_{current_date}_{current_time}.csv").as_posix()))
+        _shutil.copy2(rank_attempts_csv_name, str((hier_dir_path / f"RS_naiveVLM_gpt_rank_attempts_{current_date}_{current_time}.csv").as_posix()))
+        # If we wrote a JSONL earlier, copy it too
+        try:
+            import os as _os
+            if _os.path.exists(prompt_jsonl_name):
+                _shutil.copy2(prompt_jsonl_name, str((hier_dir_path / f"RS_naiveVLM_gpt_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix()))
+        except Exception:
+            pass
+
         # Write prompt/response JSONL for Naive model (align with Simple RAG behavior)
         # Note: Uses system prompt (if available) as simplified prompt representation,
         # paired with response objects containing guess_class predictions for each sample
@@ -183,6 +213,34 @@ async def main() -> None:
         write_overall_metrics(final_metrics_csv_name_uq, overalls_uq)
         write_sample_binary_accuracy_csv(preds_uq, sample_binary_csv_name_uq)
         write_rank_attempts_csv(rank_attempts_csv_name_uq, overalls_uq, total_samples=len(preds_uq))
+
+        # Hierarchical metrics outputs for filtered set
+        hier_uq_dir = Path(output_path).parent / "outputs_uq_data_collection_hierarchical_metrics"
+        hier_uq_dir.mkdir(parents=True, exist_ok=True)
+        hm_uq = hierarchical_metrics(
+            [s.get("true_class", {}) for s in filtered_results],
+            [s.get("guess_class", {}) for s in filtered_results],
+            verbose=True,
+        )
+        hier_metrics_csv_uq = str((hier_uq_dir / f"RS_naiveVLM_gpt_hier_metrics_{current_date}_{current_time}.csv").as_posix())
+        with open(hier_metrics_csv_uq, "w", newline="") as f:
+            import csv as _csv
+            w = _csv.writer(f)
+            w.writerow(["Metric", "Value"])
+            for k in ["hp", "hr", "hf"]:
+                w.writerow([k, hm_uq.get(k, "")])
+        import shutil as _shutil
+        _shutil.copy2(final_metrics_csv_name_uq, hier_metrics_csv_uq.replace("hier_metrics", "tax_metrics"))
+        _shutil.copy2(predictions_csv_name_uq, str((hier_uq_dir / f"RS_naiveVLM_gpt_predictions_{current_date}_{current_time}.csv").as_posix()))
+        _shutil.copy2(sample_binary_csv_name_uq, str((hier_uq_dir / f"RS_naiveVLM_gpt_sample_binary_accuracy_{current_date}_{current_time}.csv").as_posix()))
+        _shutil.copy2(rank_attempts_csv_name_uq, str((hier_uq_dir / f"RS_naiveVLM_gpt_rank_attempts_{current_date}_{current_time}.csv").as_posix()))
+        # Copy filtered JSONL
+        try:
+            candidate = str((Path(output_path) / f"RS_naiveVLM_gpt_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix())
+            if Path(candidate).exists():
+                _shutil.copy2(candidate, str((hier_uq_dir / f"RS_naiveVLM_gpt_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix()))
+        except Exception:
+            pass
 
         # Write filtered JSONL with prompt/response pairs to UQ directory (subset by RSID)
         try:
