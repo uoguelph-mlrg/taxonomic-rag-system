@@ -971,3 +971,81 @@ def hierarchical_metrics(
         print(f"Hierarchical F1 (hf): {hf:.3f}")
 
     return {"hp": hp, "hr": hr, "hf": hf}
+
+
+def sample_hierarchical_metrics(true_dict: Dict[str, str], pred_dict: Dict[str, str]) -> Dict[str, float]:
+    """
+    Compute per-sample hierarchical precision/recall/F1 (HP/HR/HF) using the same
+    logic as `hierarchical_metrics` (current implementation based on set intersection
+    of built ancestor paths with early stopping on first missing rank).
+    """
+    ranks = [rank.lower() for rank in RANKS]
+    true_d = {k.lower(): v for k, v in (true_dict or {}).items()}
+    pred_d = {k.lower(): v for k, v in (pred_dict or {}).items()}
+
+    anc_true: List[str] = []
+    anc_pred: List[str] = []
+    for rank in ranks:
+        t_val = true_d.get(rank, "")
+        p_val = pred_d.get(rank, "")
+        if t_val.strip():
+            anc_true.append(t_val.lower())
+        else:
+            break
+        if p_val.strip():
+            anc_pred.append(p_val.lower())
+        else:
+            break
+
+    set_true = set(anc_true)
+    set_pred = set(anc_pred)
+    inter_size = len(set_true & set_pred)
+
+    hp_i = inter_size / len(set_pred) if len(set_pred) > 0 else 0.0
+    hr_i = inter_size / len(set_true) if len(set_true) > 0 else 0.0
+    hf_i = (2 * hp_i * hr_i / (hp_i + hr_i)) if (hp_i + hr_i) > 0 else 0.0
+    return {"HP": hp_i, "HR": hr_i, "HF": hf_i}
+
+
+def write_sample_hierarchical_metrics_csv(
+    samples: List[Dict[str, Any]], csv_filename: str
+) -> None:
+    """
+    Write per-sample hierarchical metrics (HP, HR, HF) to CSV.
+    If RSID present in any sample, first column is RSID; otherwise Index.
+    """
+    has_rsid = any(s.get("RSID") is not None for s in samples)
+    with open(csv_filename, mode="w", newline="") as file:
+        writer = csv.writer(file)
+        if has_rsid:
+            writer.writerow(["RSID", "HP", "HR", "HF"])
+            for s in samples:
+                rsid = s.get("RSID", "")
+                metrics = sample_hierarchical_metrics(s.get("true_class", {}), s.get("guess_class", {}))
+                writer.writerow([rsid, metrics["HP"], metrics["HR"], metrics["HF"]])
+        else:
+            writer.writerow(["Index", "HP", "HR", "HF"])
+            for i, s in enumerate(samples):
+                metrics = sample_hierarchical_metrics(s.get("true_class", {}), s.get("guess_class", {}))
+                writer.writerow([i, metrics["HP"], metrics["HR"], metrics["HF"]])
+
+
+def write_preds_hierarchical_to_csv(
+    samples: List[Dict[str, Any]], csv_filename: str
+) -> None:
+    """
+    Write predictions with appended per-sample hierarchical metrics (HP, HR, HF).
+    If RSID present in any sample, first column is RSID; otherwise Index.
+    """
+    has_rsid = any(s.get("RSID") is not None for s in samples)
+    cols = RANKS.copy()
+    with open(csv_filename, mode="w", newline="") as file:
+        writer = csv.writer(file)
+        header = (["RSID"] if has_rsid else ["Index"]) + cols + ["HP", "HR", "HF"]
+        writer.writerow(header)
+        for i, s in enumerate(samples):
+            guess = s.get("guess_class", {}) or {}
+            row_id = s.get("RSID", "") if has_rsid else i
+            metrics = sample_hierarchical_metrics(s.get("true_class", {}), guess)
+            row = [row_id] + [guess.get(col, "") for col in cols] + [metrics["HP"], metrics["HR"], metrics["HF"]]
+            writer.writerow(row)

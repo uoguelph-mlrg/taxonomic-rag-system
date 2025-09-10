@@ -39,6 +39,8 @@ from taxonomic_rag_system.utils.helpers import (
     write_rank_attempts_csv,
     filter_nonempty_results,
     hierarchical_metrics,
+    write_sample_hierarchical_metrics_csv,
+    write_preds_hierarchical_to_csv,
 )
 
 
@@ -147,17 +149,16 @@ async def main() -> None:
             [s.get("guess_class", {}) for s in rarespp_predictions],
             verbose=True,
         )
-        hier_metrics_csv = str((hier_dir_path / f"RS_naiveVLM_gemini_hier_metrics_{current_date}_{current_time}.csv").as_posix())
-        with open(hier_metrics_csv, "w", newline="") as f:
-            import csv as _csv
-            w = _csv.writer(f)
-            w.writerow(["Metric", "Value"])
-            for k in ["hp", "hr", "hf"]:
-                w.writerow([k, hm.get(k, "")])
+        # Write hierarchical tax metrics and per-sample hierarchical CSVs
+        hier_tax_metrics_csv = str((hier_dir_path / f"RS_naiveVLM_gemini_tax_metrics_{current_date}_{current_time}.csv").as_posix())
+        overalls_with_hier = dict(overalls)
+        overalls_with_hier.update(hm)
+        write_overall_metrics(hier_tax_metrics_csv, overalls_with_hier)
+        hier_predictions_csv = str((hier_dir_path / f"RS_naiveVLM_gemini_predictions_{current_date}_{current_time}.csv").as_posix())
+        write_preds_hierarchical_to_csv(rarespp_predictions, hier_predictions_csv)
+        hier_sample_csv = str((hier_dir_path / f"RS_naiveVLM_gemini_sample_hierarchical_metrics_{current_date}_{current_time}.csv").as_posix())
+        write_sample_hierarchical_metrics_csv(rarespp_predictions, hier_sample_csv)
         import shutil as _shutil
-        _shutil.copy2(final_metrics_csv_name, hier_metrics_csv.replace("hier_metrics", "tax_metrics"))
-        _shutil.copy2(predictions_csv_name, str((hier_dir_path / f"RS_naiveVLM_gemini_predictions_{current_date}_{current_time}.csv").as_posix()))
-        _shutil.copy2(sample_binary_csv_name, str((hier_dir_path / f"RS_naiveVLM_gemini_sample_binary_accuracy_{current_date}_{current_time}.csv").as_posix()))
         _shutil.copy2(rank_attempts_csv_name, str((hier_dir_path / f"RS_naiveVLM_gemini_rank_attempts_{current_date}_{current_time}.csv").as_posix()))
         # Copy JSONL if present
         try:
@@ -202,18 +203,15 @@ async def main() -> None:
             [s.get("guess_class", {}) for s in filter_nonempty_results(rarespp_predictions)],
             verbose=True,
         )
-        hier_metrics_csv_uq = str((hier_uq_dir / f"RS_naiveVLM_gemini_hier_metrics_{current_date}_{current_time}.csv").as_posix())
-        with open(hier_metrics_csv_uq, "w", newline="") as f:
-            import csv as _csv
-            w = _csv.writer(f)
-            w.writerow(["Metric", "Value"])
-            for k in ["hp", "hr", "hf"]:
-                w.writerow([k, hm_uq.get(k, "")])
-        import shutil as _shutil
-        _shutil.copy2(final_metrics_csv_name_uq, hier_metrics_csv_uq.replace("hier_metrics", "tax_metrics"))
-        _shutil.copy2(predictions_csv_name_uq, str((hier_uq_dir / f"RS_naiveVLM_gemini_predictions_{current_date}_{current_time}.csv").as_posix()))
-        _shutil.copy2(sample_binary_csv_name_uq, str((hier_uq_dir / f"RS_naiveVLM_gemini_sample_binary_accuracy_{current_date}_{current_time}.csv").as_posix()))
-        _shutil.copy2(rank_attempts_csv_name_uq, str((hier_uq_dir / f"RS_naiveVLM_gemini_rank_attempts_{current_date}_{current_time}.csv").as_posix()))
+        # Write hierarchical tax metrics and per-sample hierarchical CSVs for filtered set
+        hier_tax_metrics_csv_uq = str((hier_uq_dir / f"RS_naiveVLM_gemini_tax_metrics_{current_date}_{current_time}.csv").as_posix())
+        overalls_uq_with_hier = dict(overalls_uq)
+        overalls_uq_with_hier.update(hm_uq)
+        write_overall_metrics(hier_tax_metrics_csv_uq, overalls_uq_with_hier)
+        hier_predictions_csv_uq = str((hier_uq_dir / f"RS_naiveVLM_gemini_predictions_{current_date}_{current_time}.csv").as_posix())
+        write_preds_hierarchical_to_csv(filter_nonempty_results(rarespp_predictions), hier_predictions_csv_uq)
+        hier_sample_csv_uq = str((hier_uq_dir / f"RS_naiveVLM_gemini_sample_hierarchical_metrics_{current_date}_{current_time}.csv").as_posix())
+        write_sample_hierarchical_metrics_csv(filter_nonempty_results(rarespp_predictions), hier_sample_csv_uq)
 
         # Write filtered JSONL with prompt/response pairs to UQ directory
         try:

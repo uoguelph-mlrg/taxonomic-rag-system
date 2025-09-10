@@ -53,6 +53,8 @@ from taxonomic_rag_system.utils.helpers import (
     write_rank_attempts_csv,
     filter_nonempty_results,
     hierarchical_metrics,
+    write_sample_hierarchical_metrics_csv,
+    write_preds_hierarchical_to_csv,
 )
 
 
@@ -177,14 +179,16 @@ async def main() -> None:
             [s.get("guess_class", {}) for s in rarespp_predictions],
             verbose=True,
         )
-        # Write merged tax metrics (rank metrics + hp/hr/hf) into hierarchical dir
+        # Write hierarchical tax metrics and per-sample hierarchical CSVs
         hier_tax_metrics_csv = str((hier_dir_path / f"RS_advRAG_tax_metrics_{current_date}_{current_time}.csv").as_posix())
         overalls_with_hier = dict(overalls)
         overalls_with_hier.update(hm)
         write_overall_metrics(hier_tax_metrics_csv, overalls_with_hier)
+        hier_predictions_csv = str((hier_dir_path / f"RS_advRAG_predictions_{current_date}_{current_time}.csv").as_posix())
+        write_preds_hierarchical_to_csv(rarespp_predictions, hier_predictions_csv)
+        hier_sample_csv = str((hier_dir_path / f"RS_advRAG_sample_hierarchical_metrics_{current_date}_{current_time}.csv").as_posix())
+        write_sample_hierarchical_metrics_csv(rarespp_predictions, hier_sample_csv)
         import shutil as _shutil
-        _shutil.copy2(predictions_csv_name, str((hier_dir_path / f"RS_advRAG_predictions_{current_date}_{current_time}.csv").as_posix()))
-        _shutil.copy2(sample_binary_csv_name, str((hier_dir_path / f"RS_advRAG_sample_binary_accuracy_{current_date}_{current_time}.csv").as_posix()))
         _shutil.copy2(rank_attempts_csv_name, str((hier_dir_path / f"RS_advRAG_rank_attempts_{current_date}_{current_time}.csv").as_posix()))
         _shutil.copy2(prompt_jsonl_name, str((hier_dir_path / f"RS_advRAG_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix()))
 
@@ -212,14 +216,16 @@ async def main() -> None:
             [s.get("guess_class", {}) for s in filtered_results],
             verbose=True,
         )
-        # Write merged tax metrics (rank metrics + hp/hr/hf) into hierarchical UQ dir
+        # Write hierarchical tax metrics and per-sample hierarchical CSVs for filtered set
         hier_tax_metrics_csv_uq = str((hier_uq_dir / f"RS_advRAG_tax_metrics_{current_date}_{current_time}.csv").as_posix())
         overalls_uq_with_hier = dict(overalls_uq)
         overalls_uq_with_hier.update(hm_uq)
         write_overall_metrics(hier_tax_metrics_csv_uq, overalls_uq_with_hier)
+        hier_predictions_csv_uq = str((hier_uq_dir / f"RS_advRAG_predictions_{current_date}_{current_time}.csv").as_posix())
+        write_preds_hierarchical_to_csv(filtered_results, hier_predictions_csv_uq)
+        hier_sample_csv_uq = str((hier_uq_dir / f"RS_advRAG_sample_hierarchical_metrics_{current_date}_{current_time}.csv").as_posix())
+        write_sample_hierarchical_metrics_csv(filtered_results, hier_sample_csv_uq)
         import shutil as _shutil
-        _shutil.copy2(predictions_csv_name_uq, str((hier_uq_dir / f"RS_advRAG_predictions_{current_date}_{current_time}.csv").as_posix()))
-        _shutil.copy2(sample_binary_csv_name_uq, str((hier_uq_dir / f"RS_advRAG_sample_binary_accuracy_{current_date}_{current_time}.csv").as_posix()))
         _shutil.copy2(rank_attempts_csv_name_uq, str((hier_uq_dir / f"RS_advRAG_rank_attempts_{current_date}_{current_time}.csv").as_posix()))
         try:
             _shutil.copy2(uq_jsonl_name, str((hier_uq_dir / f"RS_advRAG_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix()))
