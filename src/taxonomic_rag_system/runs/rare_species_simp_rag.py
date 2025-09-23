@@ -54,6 +54,8 @@ from taxonomic_rag_system.utils.helpers import (
     hierarchical_metrics,
     write_sample_hierarchical_metrics_csv,
     write_preds_hierarchical_to_csv,
+    write_per_rank_binary_jsonl,
+    write_sample_binary_hierarchical_json,
 )
 
 
@@ -141,11 +143,25 @@ async def main() -> None:
         if output_path:
             Path(output_path).mkdir(parents=True, exist_ok=True)
 
+        # Compute hierarchical metrics once and merge into main tax_metrics
+        hm = hierarchical_metrics(
+            [s.get("true_class", {}) for s in rarespp_predictions],
+            [s.get("guess_class", {}) for s in rarespp_predictions],
+            verbose=True,
+        )
         final_metrics_csv_name = str(
-            output_path + f"RS_simpRAG_tax_metrics_{current_date}_{current_time}.csv"
+            output_path + f"RS_simpRAG_tax_metrics_hierarchical_{current_date}_{current_time}.csv"
         )
         predictions_csv_name = str(
             output_path + f"RS_simpRAG_predictions_{current_date}_{current_time}.csv"
+        )
+        # Write per-rank binary accuracy JSONL (one line per rank per sample)
+        per_rank_jsonl_name = str(
+            output_path + f"RS_simpRAG_per_rank_binary_{current_date}_{current_time}.jsonl"
+        )
+        # Write per-sample binary + hierarchical metrics in one JSON
+        per_sample_metrics_json = str(
+            output_path + f"RS_simpRAG_per_sample_binary_hierarchical_{current_date}_{current_time}.json"
         )
         # Write per-sample binary accuracy labels
         sample_binary_csv_name = str(
@@ -156,29 +172,17 @@ async def main() -> None:
             output_path + f"RS_simpRAG_rank_attempts_{current_date}_{current_time}.csv"
         )
         write_preds_to_csv(preds, predictions_csv_name)
-        write_overall_metrics(final_metrics_csv_name, overalls)
+        overalls_with_hier_main = dict(overalls)
+        overalls_with_hier_main.update(hm)
+        write_overall_metrics(final_metrics_csv_name, overalls_with_hier_main)
         write_sample_binary_accuracy_csv(preds, sample_binary_csv_name)
         write_rank_attempts_csv(rank_attempts_csv_name, overalls, total_samples=len(preds))
+        # Write per-rank JSONL using full set
+        write_per_rank_binary_jsonl(rarespp_predictions, per_rank_jsonl_name)
+        # Write per-sample JSON with binary + hierarchical
+        write_sample_binary_hierarchical_json(rarespp_predictions, per_sample_metrics_json)
 
-        # Hierarchical metrics outputs
-        hier_dir_path = Path(output_path).parent / "outputs_hierarchical_metrics"
-        hier_dir_path.mkdir(parents=True, exist_ok=True)
-        hm = hierarchical_metrics(
-            [s.get("true_class", {}) for s in rarespp_predictions],
-            [s.get("guess_class", {}) for s in rarespp_predictions],
-            verbose=True,
-        )
-        # Write merged tax metrics (rank metrics + hp/hr/hf) into hierarchical dir
-        hier_tax_metrics_csv = str((hier_dir_path / f"RS_simpRAG_tax_metrics_{current_date}_{current_time}.csv").as_posix())
-        overalls_with_hier = dict(overalls)
-        overalls_with_hier.update(hm)
-        write_overall_metrics(hier_tax_metrics_csv, overalls_with_hier)
-        # Copy remaining CSVs and JSONL into hierarchical dir
-        import shutil as _shutil
-        _shutil.copy2(predictions_csv_name, str((hier_dir_path / f"RS_simpRAG_predictions_{current_date}_{current_time}.csv").as_posix()))
-        _shutil.copy2(sample_binary_csv_name, str((hier_dir_path / f"RS_simpRAG_sample_binary_accuracy_{current_date}_{current_time}.csv").as_posix()))
-        _shutil.copy2(rank_attempts_csv_name, str((hier_dir_path / f"RS_simpRAG_rank_attempts_{current_date}_{current_time}.csv").as_posix()))
-        _shutil.copy2(prompt_jsonl_name, str((hier_dir_path / f"RS_simpRAG_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix()))
+        # Removed outputs_hierarchical_metrics directory and copies
 
         # Write filtered results (exclude samples with empty predictions) to outputs_uq_data_collection/
         uq_dir_path = Path(output_path).parent / "outputs_uq_data_collection"
@@ -186,38 +190,30 @@ async def main() -> None:
 
         filtered_results = filter_nonempty_results(rarespp_predictions)
         overalls_uq, preds_uq = extract_tax_metrics_rs(filtered_results, verbose=True)
-
-        final_metrics_csv_name_uq = str((uq_dir_path / f"RS_simpRAG_tax_metrics_{current_date}_{current_time}.csv").as_posix())
-        predictions_csv_name_uq = str((uq_dir_path / f"RS_simpRAG_predictions_{current_date}_{current_time}.csv").as_posix())
-        sample_binary_csv_name_uq = str((uq_dir_path / f"RS_simpRAG_sample_binary_accuracy_{current_date}_{current_time}.csv").as_posix())
-        rank_attempts_csv_name_uq = str((uq_dir_path / f"RS_simpRAG_rank_attempts_{current_date}_{current_time}.csv").as_posix())
-        write_preds_to_csv(preds_uq, predictions_csv_name_uq)
-        write_overall_metrics(final_metrics_csv_name_uq, overalls_uq)
-        write_sample_binary_accuracy_csv(preds_uq, sample_binary_csv_name_uq)
-        write_rank_attempts_csv(rank_attempts_csv_name_uq, overalls_uq, total_samples=len(preds_uq))
-
-        # Hierarchical metrics outputs for filtered set
-        hier_uq_dir = Path(output_path).parent / "outputs_uq_data_collection_hierarchical_metrics"
-        hier_uq_dir.mkdir(parents=True, exist_ok=True)
         hm_uq = hierarchical_metrics(
             [s.get("true_class", {}) for s in filtered_results],
             [s.get("guess_class", {}) for s in filtered_results],
             verbose=True,
         )
-        # Write merged tax metrics (rank metrics + hp/hr/hf) into hierarchical UQ dir
-        hier_tax_metrics_csv_uq = str((hier_uq_dir / f"RS_simpRAG_tax_metrics_{current_date}_{current_time}.csv").as_posix())
+
+        final_metrics_csv_name_uq = str((uq_dir_path / f"RS_simpRAG_tax_metrics_hierarchical_{current_date}_{current_time}.csv").as_posix())
+        predictions_csv_name_uq = str((uq_dir_path / f"RS_simpRAG_predictions_{current_date}_{current_time}.csv").as_posix())
+        sample_binary_csv_name_uq = str((uq_dir_path / f"RS_simpRAG_sample_binary_accuracy_{current_date}_{current_time}.csv").as_posix())
+        rank_attempts_csv_name_uq = str((uq_dir_path / f"RS_simpRAG_rank_attempts_{current_date}_{current_time}.csv").as_posix())
+        per_rank_jsonl_name_uq = str((uq_dir_path / f"RS_simpRAG_per_rank_binary_{current_date}_{current_time}.jsonl").as_posix())
+        per_sample_metrics_json_uq = str((uq_dir_path / f"RS_simpRAG_per_sample_binary_hierarchical_{current_date}_{current_time}.json").as_posix())
+        write_preds_to_csv(preds_uq, predictions_csv_name_uq)
         overalls_uq_with_hier = dict(overalls_uq)
         overalls_uq_with_hier.update(hm_uq)
-        write_overall_metrics(hier_tax_metrics_csv_uq, overalls_uq_with_hier)
-        import shutil as _shutil
-        _shutil.copy2(predictions_csv_name_uq, str((hier_uq_dir / f"RS_simpRAG_predictions_{current_date}_{current_time}.csv").as_posix()))
-        _shutil.copy2(sample_binary_csv_name_uq, str((hier_uq_dir / f"RS_simpRAG_sample_binary_accuracy_{current_date}_{current_time}.csv").as_posix()))
-        _shutil.copy2(rank_attempts_csv_name_uq, str((hier_uq_dir / f"RS_simpRAG_rank_attempts_{current_date}_{current_time}.csv").as_posix()))
-        # Copy filtered JSONL (already created above)
-        try:
-            _shutil.copy2(uq_jsonl_name, str((hier_uq_dir / f"RS_simpRAG_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix()))
-        except Exception:
-            pass
+        write_overall_metrics(final_metrics_csv_name_uq, overalls_uq_with_hier)
+        write_sample_binary_accuracy_csv(preds_uq, sample_binary_csv_name_uq)
+        write_rank_attempts_csv(rank_attempts_csv_name_uq, overalls_uq, total_samples=len(preds_uq))
+        # Write per-rank JSONL using filtered set
+        write_per_rank_binary_jsonl(filtered_results, per_rank_jsonl_name_uq)
+        # Write per-sample JSON using filtered set
+        write_sample_binary_hierarchical_json(filtered_results, per_sample_metrics_json_uq)
+
+        # Removed outputs_uq_data_collection_hierarchical_metrics directory and copies
 
         # Write filtered JSONL with prompt/response pairs to UQ directory (subset by RSID)
         try:

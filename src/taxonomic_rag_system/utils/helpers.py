@@ -75,6 +75,7 @@ from sklearn.preprocessing import LabelEncoder
 import json
 
 RANKS = ["Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"]
+RANK_TO_IDX = {rank: i + 1 for i, rank in enumerate(RANKS)}
 
 
 def load_api_keys() -> None:
@@ -1049,3 +1050,152 @@ def write_preds_hierarchical_to_csv(
             metrics = sample_hierarchical_metrics(s.get("true_class", {}), guess)
             row = [row_id] + [guess.get(col, "") for col in cols] + [metrics["HP"], metrics["HR"], metrics["HF"]]
             writer.writerow(row)
+
+
+def _deepest_predicted_depth(pred_dict: Dict[str, str]) -> int:
+    """Return the deepest non-"N/A" rank index (1..7) present in predictions.
+
+    Treat a missing rank as "N/A". Return 0 if no ranks are predicted.
+    """
+    if not pred_dict:
+        return 0
+    depth = 0
+    for rank in RANKS:
+        if pred_dict.get(rank, "N/A") != "N/A":
+            depth = RANK_TO_IDX[rank]
+        else:
+            # When encountering the first missing/"N/A", the remaining are considered missing
+            # but still allow later keys if model skipped a level (unlikely); keep checking
+            continue
+    return depth
+
+
+def _ancestors_match_upto_parent(true_class: Dict[str, str], pred_class: Dict[str, str], upto_rank: str) -> bool:
+    """Check whether all ancestors (strict prefix) up to the parent of `upto_rank` match.
+
+    - Missing prediction for an ancestor rank counts as a mismatch (strict prefix condition).
+    """
+    if upto_rank not in RANK_TO_IDX:
+        return False
+    upto_idx = RANK_TO_IDX[upto_rank]
+    # For Kingdom (idx 1), there are no ancestors
+    if upto_idx <= 1:
+        return True
+    for rank in RANKS[: upto_idx - 1]:
+        pred_val = pred_class.get(rank, "N/A")
+        true_val = true_class.get(rank, "")
+        if pred_val == "N/A" or pred_val != true_val:
+            return False
+    return True
+
+
+def build_per_rank_records(samples: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Construct per-rank records for each sample with strict binary labels.
+
+    Output schema per record:
+      {
+        "rsid": str,
+        "rank_idx": int,                  # 1..7 => Kingdom..Species
+        "rank": str,                      # e.g., "Kingdom"
+        "pred": str,                      # predicted taxon or "N/A"
+        "gold": str,                      # gold taxon
+        "ancestor_ok_upto_parent": bool,  # ancestors all correct
+        "abstained": bool,                # pred == "N/A"
+        "label_binary": int,              # 1 if pred==gold and ancestors correct, else 0
+        "depth_pred": int,                # deepest non-"N/A" rank for this RSID
+      }
+    """
+    records: List[Dict[str, Any]] = []
+    for sample in samples:
+        rsid = sample.get("RSID")
+        rsid_str = "" if rsid is None else str(rsid)
+        true_class = sample.get("true_class", {}) or {}
+        pred_class = sample.get("guess_class", {}) or {}
+        depth_pred = _deepest_predicted_depth(pred_class)
+
+        for rank in RANKS:
+            rank_idx = RANK_TO_IDX[rank]
+            pred_val = pred_class.get(rank, "N/A")
+            gold_val = true_class.get(rank, "")
+            abstained = pred_val == "N/A"
+            ancestors_ok = _ancestors_match_upto_parent(true_class, pred_class, rank)
+            label_binary = int((not abstained) and (pred_val == gold_val) and ancestors_ok)
+
+            records.append(
+                {
+                    "rsid": rsid_str,
+                    "rank_idx": rank_idx,
+                    "rank": rank,
+                    "pred": pred_val,
+                    "gold": gold_val,
+                    "ancestor_ok_upto_parent": ancestors_ok,
+                    "abstained": abstained,
+                    "label_binary": label_binary,
+                    "depth_pred": depth_pred,
+                }
+            )
+    return records
+
+
+def build_per_sample_metrics(samples: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Construct per-sample metrics records containing Binary and Hierarchical metrics.
+
+    Output schema per sample:
+      {
+        "RSID": str,
+        "BinaryAccuracy": Optional[int],
+        "HP": float,
+        "HR": float,
+        "HF": float
+      }
+    """
+    out: List[Dict[str, Any]] = []
+    for sample in samples:
+        rsid = sample.get("RSID")
+        rsid_str = "" if rsid is None else str(rsid)
+        true_class = sample.get("true_class", {}) or {}
+        pred_class = sample.get("guess_class", {}) or {}
+        # BinaryAccuracy
+        try:
+            bin_acc = sample_binary_accuracy(true_class, pred_class)
+        except Exception:
+            bin_acc = 0
+        # Hierarchical
+        try:
+            hier = sample_hierarchical_metrics(true_class, pred_class)
+        except Exception:
+            hier = {"HP": 0.0, "HR": 0.0, "HF": 0.0}
+        out.append(
+            {
+                "RSID": rsid_str,
+                "BinaryAccuracy": bin_acc,
+                "HP": hier.get("HP", 0.0),
+                "HR": hier.get("HR", 0.0),
+                "HF": hier.get("HF", 0.0),
+            }
+        )
+    return out
+
+
+def write_sample_binary_hierarchical_json(samples: List[Dict[str, Any]], json_filename: str) -> None:
+    """Write per-sample Binary and Hierarchical metrics to a JSON file (array).
+
+    The file contains a JSON array of objects from `build_per_sample_metrics`.
+    """
+    records = build_per_sample_metrics(samples)
+    Path(json_filename).expanduser().parent.mkdir(parents=True, exist_ok=True)
+    with open(json_filename, "w", encoding="utf-8") as f:
+        json.dump(records, f, ensure_ascii=False)
+
+
+def write_per_rank_binary_jsonl(samples: List[Dict[str, Any]], jsonl_filename: str) -> None:
+    """Write per-rank records with strict binary labels to a JSONL file.
+
+    One line per (sample, rank) pair following `build_per_rank_records` schema.
+    """
+    records = build_per_rank_records(samples)
+    # Ensure parent directory exists
+    Path(jsonl_filename).expanduser().parent.mkdir(parents=True, exist_ok=True)
+    with open(jsonl_filename, "w", encoding="utf-8") as f:
+        for rec in records:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
