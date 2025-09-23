@@ -49,14 +49,11 @@ from taxonomic_rag_system.utils.helpers import (
     extract_tax_metrics_rs,
     write_overall_metrics,
     write_preds_to_csv,
-    write_sample_binary_accuracy_csv,
     write_rank_attempts_csv,
     filter_nonempty_results,
     hierarchical_metrics,
-    write_sample_hierarchical_metrics_csv,
-    write_preds_hierarchical_to_csv,
     write_per_rank_binary_jsonl,
-    write_sample_binary_hierarchical_json,
+    sample_hierarchical_metrics,
 )
 
 
@@ -170,14 +167,7 @@ async def main() -> None:
         per_rank_jsonl_name = str(
             output_path + f"RS_advRAG_per_rank_binary_{current_date}_{current_time}.jsonl"
         )
-        # Per-sample binary + hierarchical JSON
-        per_sample_metrics_json = str(
-            output_path + f"RS_advRAG_per_sample_binary_hierarchical_{current_date}_{current_time}.json"
-        )
-        # Write per-sample binary accuracy labels
-        sample_binary_csv_name = str(
-            output_path + f"RS_advRAG_sample_binary_accuracy_{current_date}_{current_time}.csv"
-        )
+        # (Removed) Per-sample JSON and sample-binary CSV
         # Write rank-level attempts (Count)
         rank_attempts_csv_name = str(
             output_path + f"RS_advRAG_rank_attempts_{current_date}_{current_time}.csv"
@@ -186,31 +176,49 @@ async def main() -> None:
         overalls_with_hier_main = dict(overalls)
         overalls_with_hier_main.update(hm)
         write_overall_metrics(final_metrics_csv_name, overalls_with_hier_main)
-        write_sample_binary_accuracy_csv(preds, sample_binary_csv_name)
         write_rank_attempts_csv(rank_attempts_csv_name, overalls, total_samples=len(preds))
         # Write per-rank JSONL (full set)
         write_per_rank_binary_jsonl(rarespp_predictions, per_rank_jsonl_name)
-        # Write per-sample JSON (binary + hierarchical)
-        write_sample_binary_hierarchical_json(rarespp_predictions, per_sample_metrics_json)
+        # Augment prompt/response JSONL with per-sample hierarchical metrics (HP/HR/HF)
+        try:
+            rsid_to_hier = {}
+            for s in rarespp_predictions:
+                rsid_val = s.get("RSID")
+                if rsid_val is None:
+                    continue
+                m = sample_hierarchical_metrics(s.get("true_class", {}), s.get("guess_class", {}))
+                rsid_to_hier[str(rsid_val)] = m
+            lines_out = []
+            with open(prompt_jsonl_name, "r", encoding="utf-8") as src:
+                for line in src:
+                    try:
+                        obj = json.loads(line)
+                    except Exception:
+                        lines_out.append(line)
+                        continue
+                    rsid = obj.get("RSID")
+                    if rsid is None:
+                        lines_out.append(line)
+                        continue
+                    hier = rsid_to_hier.get(str(rsid))
+                    if hier and isinstance(obj.get("response"), dict):
+                        gc = {}
+                        try:
+                            gc = dict((obj.get("response") or {}).get("guess_class", {}) or {})
+                        except Exception:
+                            gc = {}
+                        gc.update(hier)
+                        obj["response"] = {"guess_class": gc}
+                        line = json.dumps(obj, ensure_ascii=False) + "\n"
+                    lines_out.append(line)
+            with open(prompt_jsonl_name, "w", encoding="utf-8") as dst:
+                for ln in lines_out:
+                    dst.write(ln)
+        except Exception:
+            pass
 
         # Hierarchical metrics outputs
-        hier_dir_path = Path(output_path).parent / "outputs_hierarchical_metrics"
-        hier_dir_path.mkdir(parents=True, exist_ok=True)
-        # `hm` computed above
-        # Write hierarchical tax metrics and per-sample hierarchical CSVs
-        hier_tax_metrics_csv = str((hier_dir_path / f"RS_advRAG_tax_metrics_{current_date}_{current_time}.csv").as_posix())
-        overalls_with_hier = dict(overalls)
-        overalls_with_hier.update(hm)
-        write_overall_metrics(hier_tax_metrics_csv, overalls_with_hier)
-        hier_predictions_csv = str((hier_dir_path / f"RS_advRAG_predictions_{current_date}_{current_time}.csv").as_posix())
-        write_preds_hierarchical_to_csv(rarespp_predictions, hier_predictions_csv)
-        hier_sample_csv = str((hier_dir_path / f"RS_advRAG_sample_hierarchical_metrics_{current_date}_{current_time}.csv").as_posix())
-        write_sample_hierarchical_metrics_csv(rarespp_predictions, hier_sample_csv)
-        import shutil as _shutil
-        _shutil.copy2(rank_attempts_csv_name, str((hier_dir_path / f"RS_advRAG_rank_attempts_{current_date}_{current_time}.csv").as_posix()))
-        _shutil.copy2(prompt_jsonl_name, str((hier_dir_path / f"RS_advRAG_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix()))
-        _shutil.copy2(per_rank_jsonl_name, str((hier_dir_path / f"RS_advRAG_per_rank_binary_{current_date}_{current_time}.jsonl").as_posix()))
-        _shutil.copy2(per_sample_metrics_json, str((hier_dir_path / f"RS_advRAG_per_sample_binary_hierarchical_{current_date}_{current_time}.json").as_posix()))
+        # Removed dedicated outputs_hierarchical_metrics mirror copies and CSVs
 
         # Write filtered results (exclude samples with empty predictions) to outputs_uq_data_collection/
         uq_dir_path = Path(output_path).parent / "outputs_uq_data_collection"
@@ -226,20 +234,16 @@ async def main() -> None:
 
         final_metrics_csv_name_uq = str((uq_dir_path / f"RS_advRAG_tax_metrics_hierarchical_{current_date}_{current_time}.csv").as_posix())
         predictions_csv_name_uq = str((uq_dir_path / f"RS_advRAG_predictions_{current_date}_{current_time}.csv").as_posix())
-        sample_binary_csv_name_uq = str((uq_dir_path / f"RS_advRAG_sample_binary_accuracy_{current_date}_{current_time}.csv").as_posix())
         rank_attempts_csv_name_uq = str((uq_dir_path / f"RS_advRAG_rank_attempts_{current_date}_{current_time}.csv").as_posix())
         per_rank_jsonl_name_uq = str((uq_dir_path / f"RS_advRAG_per_rank_binary_{current_date}_{current_time}.jsonl").as_posix())
-        per_sample_metrics_json_uq = str((uq_dir_path / f"RS_advRAG_per_sample_binary_hierarchical_{current_date}_{current_time}.json").as_posix())
         write_preds_to_csv(preds_uq, predictions_csv_name_uq)
         overalls_uq_with_hier = dict(overalls_uq)
         overalls_uq_with_hier.update(hm_uq)
         write_overall_metrics(final_metrics_csv_name_uq, overalls_uq_with_hier)
-        write_sample_binary_accuracy_csv(preds_uq, sample_binary_csv_name_uq)
         write_rank_attempts_csv(rank_attempts_csv_name_uq, overalls_uq, total_samples=len(preds_uq))
         # Per-rank JSONL for filtered subset
         write_per_rank_binary_jsonl(filtered_results, per_rank_jsonl_name_uq)
-        # Per-sample JSON for filtered subset
-        write_sample_binary_hierarchical_json(filtered_results, per_sample_metrics_json_uq)
+        # Augment filtered JSONL as well by reusing subset copy step below
 
         # Removed outputs_uq_data_collection_hierarchical_metrics directory and copies
 

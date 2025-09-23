@@ -32,16 +32,14 @@ from pathlib import Path
 from taxonomic_rag_system.core.image_rag import NaiveVLModel
 from taxonomic_rag_system.utils.helpers import (
     extract_tax_metrics,
+    extract_tax_metrics_rs,
     write_overall_metrics,
     write_preds_to_csv,
-    write_sample_binary_accuracy_csv,
     write_rank_attempts_csv,
     filter_nonempty_results,
     hierarchical_metrics,
-    write_sample_hierarchical_metrics_csv,
-    write_preds_hierarchical_to_csv,
     write_per_rank_binary_jsonl,
-    write_sample_binary_hierarchical_json,
+    sample_hierarchical_metrics,
 )
 
 
@@ -118,7 +116,8 @@ async def main() -> None:
         interval=interval, verbose=2
     )
     # 3. Extract Results
-    overalls, preds = extract_tax_metrics(rarespp_predictions, verbose=True)
+    # Use RSID-enriched extraction so downstream CSVs include RSID
+    overalls, preds = extract_tax_metrics_rs(rarespp_predictions, verbose=True)
 
     if write:
         # Create output directory if it doesn't exist
@@ -139,21 +138,13 @@ async def main() -> None:
             output_path
             + f"RS_naiveVLM_gpt_predictions_{current_date}_{current_time}.csv"
         )
-        # Write per-sample binary accuracy labels
-        sample_binary_csv_name = str(
-            output_path
-            + f"RS_naiveVLM_gpt_sample_binary_accuracy_{current_date}_{current_time}.csv"
-        )
+        # (Removed) per-sample binary accuracy labels CSV
         # Per-rank binary accuracy JSONL
         per_rank_jsonl_name = str(
             output_path
             + f"RS_naiveVLM_gpt_per_rank_binary_{current_date}_{current_time}.jsonl"
         )
-        # Per-sample binary + hierarchical JSON
-        per_sample_metrics_json = str(
-            output_path
-            + f"RS_naiveVLM_gpt_per_sample_binary_hierarchical_{current_date}_{current_time}.json"
-        )
+        # (Removed) Per-sample binary + hierarchical JSON
         # Write rank-level attempts (Count)
         rank_attempts_csv_name = str(
             output_path
@@ -163,12 +154,10 @@ async def main() -> None:
         overalls_with_hier_main = dict(overalls)
         overalls_with_hier_main.update(hm)
         write_overall_metrics(final_metrics_csv_name, overalls_with_hier_main)
-        write_sample_binary_accuracy_csv(preds, sample_binary_csv_name)
         write_rank_attempts_csv(rank_attempts_csv_name, overalls, total_samples=len(preds))
         # Write per-rank JSONL (full set)
         write_per_rank_binary_jsonl(rarespp_predictions, per_rank_jsonl_name)
-        # Write per-sample JSON (binary + hierarchical)
-        write_sample_binary_hierarchical_json(rarespp_predictions, per_sample_metrics_json)
+        # Removed JSON array output in favor of enriched JSONL
 
         # Removed outputs_hierarchical_metrics directory and copies
 
@@ -182,7 +171,16 @@ async def main() -> None:
                 for sample in rarespp_predictions:
                     try:
                         rsid_val = sample.get("RSID")
-                        response_obj = {"guess_class": sample.get("guess_class", {})}
+                        # Include per-sample hierarchical metrics (HP/HR/HF)
+                        hier_metrics = sample_hierarchical_metrics(
+                            sample.get("true_class", {}), sample.get("guess_class", {})
+                        )
+                        # Copy and sanitize guess_class (avoid duplicating RSID inside)
+                        gc = dict(sample.get("guess_class", {}) or {})
+                        gc.pop("RSID", None)
+                        # Augment guess_class with HP/HR/HF for convenience
+                        gc.update(hier_metrics)
+                        response_obj = {"guess_class": gc}
                         json_line = json.dumps(
                             {"RSID": rsid_val, "prompt": prompt_text, "response": response_obj},
                             ensure_ascii=False,
@@ -198,7 +196,7 @@ async def main() -> None:
         uq_dir_path.mkdir(parents=True, exist_ok=True)
 
         filtered_results = filter_nonempty_results(rarespp_predictions)
-        overalls_uq, preds_uq = extract_tax_metrics(filtered_results, verbose=True)
+        overalls_uq, preds_uq = extract_tax_metrics_rs(filtered_results, verbose=True)
         # Enrich preds_uq with RSID from filtered_results for downstream CSV writers
         rsids_uq = [s.get("RSID") for s in filtered_results]
         for g, r in zip(preds_uq, rsids_uq):
@@ -211,20 +209,20 @@ async def main() -> None:
         )
         final_metrics_csv_name_uq = str((uq_dir_path / f"RS_naiveVLM_gpt_tax_metrics_hierarchical_{current_date}_{current_time}.csv").as_posix())
         predictions_csv_name_uq = str((uq_dir_path / f"RS_naiveVLM_gpt_predictions_{current_date}_{current_time}.csv").as_posix())
-        sample_binary_csv_name_uq = str((uq_dir_path / f"RS_naiveVLM_gpt_sample_binary_accuracy_{current_date}_{current_time}.csv").as_posix())
+        # Legacy output path for per-sample binary CSV (optional)
+        # Removed per-sample binary CSV in UQ dir
         rank_attempts_csv_name_uq = str((uq_dir_path / f"RS_naiveVLM_gpt_rank_attempts_{current_date}_{current_time}.csv").as_posix())
         per_rank_jsonl_name_uq = str((uq_dir_path / f"RS_naiveVLM_gpt_per_rank_binary_{current_date}_{current_time}.jsonl").as_posix())
-        per_sample_metrics_json_uq = str((uq_dir_path / f"RS_naiveVLM_gpt_per_sample_binary_hierarchical_{current_date}_{current_time}.json").as_posix())
+        # Legacy output path for per-sample JSON (optional)
+        # Removed per-sample JSON in UQ dir
         write_preds_to_csv(preds_uq, predictions_csv_name_uq)
         overalls_uq_with_hier = dict(overalls_uq)
         overalls_uq_with_hier.update(hm_uq)
         write_overall_metrics(final_metrics_csv_name_uq, overalls_uq_with_hier)
-        write_sample_binary_accuracy_csv(preds_uq, sample_binary_csv_name_uq)
         write_rank_attempts_csv(rank_attempts_csv_name_uq, overalls_uq, total_samples=len(preds_uq))
         # Write per-rank JSONL (filtered)
         write_per_rank_binary_jsonl(filtered_results, per_rank_jsonl_name_uq)
-        # Write per-sample JSON (filtered)
-        write_sample_binary_hierarchical_json(filtered_results, per_sample_metrics_json_uq)
+        # Removed per-sample JSON (filtered)
 
         # Removed outputs_uq_data_collection_hierarchical_metrics directory and copies
 

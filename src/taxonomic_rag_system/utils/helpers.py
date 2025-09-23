@@ -595,17 +595,29 @@ def write_overall_metrics(csv_filename: str, data: Dict[str, Dict[str, float]]) 
     """
     with open(csv_filename, mode="w", newline="") as file:
         writer = csv.writer(file)
-        # Write the header
-        writer.writerow(["Rank", "Accuracy", "F1"])
+        # Extract aggregated hierarchical metrics if present in the data dict
+        agg_hp = data.get("hp", "") if not isinstance(data.get("hp", {}), dict) else ""
+        agg_hr = data.get("hr", "") if not isinstance(data.get("hr", {}), dict) else ""
+        agg_hf = data.get("hf", "") if not isinstance(data.get("hf", {}), dict) else ""
 
-        # Write each rank's metrics
+        # Write the header with aggregated hierarchical metric columns
+        writer.writerow(["Rank", "Accuracy", "F1", "HP", "HR", "HF"])
+
+        # Write each rank's metrics, repeating aggregated HP/HR/HF for convenience
         for rank, metrics in data.items():
             if isinstance(metrics, dict):  # For ranks with 'accuracy' and 'f1'
                 writer.writerow(
-                    [rank, metrics.get("accuracy", ""), metrics.get("f1", "")]
+                    [
+                        rank,
+                        metrics.get("accuracy", ""),
+                        metrics.get("f1", ""),
+                        agg_hp,
+                        agg_hr,
+                        agg_hf,
+                    ]
                 )
-            else:  # For PropRanksCorrect and Ranks
-                writer.writerow([rank, metrics, ""])
+            else:  # For PropRanksCorrect, Ranks, hp/hr/hf rows
+                writer.writerow([rank, metrics, "", agg_hp, agg_hr, agg_hf])
 
 
 # Write rank-level attempts (Count) to CSV
