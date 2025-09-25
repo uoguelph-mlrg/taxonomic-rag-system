@@ -181,12 +181,20 @@ async def main() -> None:
         try:
             # Build RSID -> metrics map
             rsid_to_hier = {}
+            # Also compute BinaryAccuracy per sample (on predicted-only ranks)
+            rsid_to_binary = {}
             for s in rarespp_predictions:
                 rsid_val = s.get("RSID")
                 if rsid_val is None:
                     continue
                 m = sample_hierarchical_metrics(s.get("true_class", {}), s.get("guess_class", {}))
                 rsid_to_hier[str(rsid_val)] = m
+                try:
+                    from taxonomic_rag_system.utils.helpers import sample_binary_accuracy
+                    ba = sample_binary_accuracy(s.get("true_class", {}) or {}, s.get("guess_class", {}) or {})
+                except Exception:
+                    ba = None
+                rsid_to_binary[str(rsid_val)] = ba
             # Read and rewrite file with augmented response (preserve full response)
             lines_out = []
             with open(prompt_jsonl_name, "r", encoding="utf-8") as src:
@@ -213,13 +221,15 @@ async def main() -> None:
                             gc = dict((resp.get("guess_class") or {}))
                         except Exception:
                             gc = resp.get("guess_class") or {}
+                        # Add BinaryAccuracy first
+                        ba = rsid_to_binary.get(str(rsid))
+                        if ba is not None:
+                            resp["BinaryAccuracy"] = ba
                         # Add HP/HR/HF into a dedicated field to avoid clobbering richer fields
                         resp["hier_metrics"] = dict(hier)
-                        # Optionally also mirror metrics into guess_class for convenience (non-destructive)
+                        # Do NOT mirror HP/HR/HF into guess_class to avoid duplication; keep guess_class pure taxonomy
                         if isinstance(gc, dict):
-                            gc_with_metrics = dict(gc)
-                            gc_with_metrics.update(hier)
-                            resp["guess_class"] = gc_with_metrics
+                            resp["guess_class"] = gc
                         obj["response"] = resp
                         line = json.dumps(obj, ensure_ascii=False) + "\n"
                     lines_out.append(line)

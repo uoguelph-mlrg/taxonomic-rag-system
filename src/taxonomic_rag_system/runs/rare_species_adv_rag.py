@@ -182,12 +182,19 @@ async def main() -> None:
         # Augment prompt/response JSONL with per-sample hierarchical metrics (HP/HR/HF)
         try:
             rsid_to_hier = {}
+            rsid_to_binary = {}
             for s in rarespp_predictions:
                 rsid_val = s.get("RSID")
                 if rsid_val is None:
                     continue
                 m = sample_hierarchical_metrics(s.get("true_class", {}), s.get("guess_class", {}))
                 rsid_to_hier[str(rsid_val)] = m
+                try:
+                    from taxonomic_rag_system.utils.helpers import sample_binary_accuracy
+                    ba = sample_binary_accuracy(s.get("true_class", {}) or {}, s.get("guess_class", {}) or {})
+                except Exception:
+                    ba = None
+                rsid_to_binary[str(rsid_val)] = ba
             lines_out = []
             with open(prompt_jsonl_name, "r", encoding="utf-8") as src:
                 for line in src:
@@ -202,7 +209,7 @@ async def main() -> None:
                         continue
                     hier = rsid_to_hier.get(str(rsid))
                     if hier and isinstance(obj.get("response"), dict):
-                        # Preserve original response and attach hierarchical metrics under "hier_metrics"
+                        # Preserve original response and attach BinaryAccuracy + hierarchical metrics
                         try:
                             resp = dict(obj.get("response") or {})
                         except Exception:
@@ -211,11 +218,13 @@ async def main() -> None:
                             gc = dict((resp.get("guess_class") or {}))
                         except Exception:
                             gc = resp.get("guess_class") or {}
+                        ba = rsid_to_binary.get(str(rsid))
+                        if ba is not None:
+                            resp["BinaryAccuracy"] = ba
                         resp["hier_metrics"] = dict(hier)
+                        # Keep guess_class pure taxonomy; avoid duplicating metrics inside it
                         if isinstance(gc, dict):
-                            gc_with_metrics = dict(gc)
-                            gc_with_metrics.update(hier)
-                            resp["guess_class"] = gc_with_metrics
+                            resp["guess_class"] = gc
                         obj["response"] = resp
                         line = json.dumps(obj, ensure_ascii=False) + "\n"
                     lines_out.append(line)
