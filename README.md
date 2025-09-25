@@ -5,7 +5,7 @@
 [![code checks](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/code_checks.yml/badge.svg)](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/code_checks.yml)
 [![integration tests](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/integration_tests.yml/badge.svg)](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/integration_tests.yml)
 [![docs](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/docs.yml/badge.svg)](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/docs.yml)
-![GitHub License](https://img.shields.io/github/license/uoguelph-mlrg/taxonomic-rag-system)
+![GitHub License][![GitHub License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/uoguelph-mlrg/taxonomic-rag-system/blob/main/LICENSE)
 
 A system for taxonomic classification and biodiversity analysis using Retrieval-Augmented Generation (RAG) and Vision-Language Models (VLMs). This repository contains the implementation of experiments presented in [Taxonomic Reasoning of Rare Arthropods: Combinging Dense Image Captioning with RAG for Interpretable Classification](https://arxiv.org/abs/2503.10886), part of the Canadian AI 2025 Conference proceedings.
 
