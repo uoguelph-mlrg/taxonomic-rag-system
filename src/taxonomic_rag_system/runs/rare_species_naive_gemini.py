@@ -101,7 +101,7 @@ async def main() -> None:
     rarespp_predictions = await naive_model.rarespecies_dataset_run(
         interval=interval, verbose=2
     )
-    overalls, preds = extract_tax_metrics(rarespp_predictions, verbose=True)
+    rank_metrics, overall_metrics, preds = extract_tax_metrics(rarespp_predictions, verbose=True)
 
     if write:
         # Create output directory if it doesn't exist
@@ -119,7 +119,7 @@ async def main() -> None:
             + f"RS_naiveVLM_gemini_predictions_{current_date}_{current_time}.csv"
         )
         write_preds_to_csv(preds, predictions_csv_name)
-        write_overall_metrics(final_metrics_csv_name, overalls)
+        write_overall_metrics(final_metrics_csv_name, rank_metrics, overall_metrics)
 
 
 if __name__ == "__main__":

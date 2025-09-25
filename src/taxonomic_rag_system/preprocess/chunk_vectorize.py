@@ -377,14 +377,15 @@ async def contextualize(chunk: str, doc: str, client: AsyncOpenAI) -> Chunk:
 
     # Extract the JSON string
     json_content = resp.choices[0].message.content
+    assert isinstance(json_content, str)
 
     # Parse the JSON string to a Python dictionary
     parsed_data = json.loads(json_content)
 
     # Manually parse the response to a Chunk object
-    chunk = Chunk.model_validate(parsed_data)
-    assert isinstance(chunk, Chunk)
-    return chunk
+    structured_chunk = Chunk.model_validate(parsed_data)
+    assert isinstance(structured_chunk, Chunk)
+    return structured_chunk
 
 
 def _filtered_load_up(path: str, output_path: Optional[str] = None) -> list[Document]:

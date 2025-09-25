@@ -58,7 +58,7 @@ class VLM:
         temp: The temperature setting for generation.
     """
 
-    def __init__(self, cap: AsyncOpenAI | None, model: str, temp: float) -> None:
+    def __init__(self, cap: AsyncOpenAI, model: str, temp: float) -> None:
         self.cap = cap
         self.model = model
         self.temp = temp
@@ -222,6 +222,7 @@ class TaxClassifierVLM(VLM):
 
         # Extract the JSON string
         json_content = raw_resp.choices[0].message.content
+        assert isinstance(json_content, str)
 
         # Parse the JSON string to a Python dictionary
         parsed_data = json.loads(json_content)
@@ -351,6 +352,7 @@ class DescriptiveCaptioner(VLM):
 
         # Extract the JSON string
         json_content = raw_resp.choices[0].message.content
+        assert isinstance(json_content, str)
 
         # Parse the JSON string to a Python dictionary
         parsed_data = json.loads(json_content)

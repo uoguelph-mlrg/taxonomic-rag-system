@@ -40,12 +40,12 @@ Functions:
     - pilimg_tob64: Convert a PIL Image object to a Base64-encoded string.
     - get_metrics: Calculate accuracy and F1 score metrics for labels.
     - dict_match: Compare dictionaries to determine matching key-value pairs.
-    - classify_report: Generate classification metrics for taxonomic predictions.
+    - classify_report: Generate separated rank-level and hierarchical metrics.
     - custom_collate_fn: Process batches of data using a custom collate function.
     - rag_evaluate: Evaluate response quality in a RAG system.
-    - write_overall_metrics: Write overall metrics to a CSV file.
-    - extract_tax_metrics: Extract classification metrics from a result object.
-    - extract_tax_metrics_rs: Extract metrics and enrich guess class dictionaries.
+    - write_overall_metrics: Write structured metrics to CSV.
+    - extract_tax_metrics: Extract rank and hierarchical metrics plus predicted classes.
+    - extract_tax_metrics_rs: Extract metrics and enrich with RSID information.
     - write_preds_to_csv: Write prediction data to a CSV file.
     - write_any_preds_to_csv: Write prediction data to a CSV file with ID handling.
     - hierarchical_metrics: Hierarchical precision (hp), recall (hr), and F1 (hf).
@@ -408,7 +408,7 @@ def classify_report(
     true_dicts: List[Dict[str, str]],
     pred_dicts: List[Dict[str, str]],
     verbose: bool = True,
-) -> Dict[str, Dict[str, float]]:
+) -> Tuple[Dict[str, Dict[str, float]], Dict[str, float]]:
     """
     Generate classification metrics for taxonomic predictions at various ranks.
 
@@ -425,18 +425,19 @@ def classify_report(
 
     Returns
     -------
-        dict[str, dict[str,float]]: Rank-wise classification metrics.
-              Each taxonomic rank is sub-dictionary with:
-              - "Count": The number of predictions made for that rank.
-              - Additional keys for metrics such as precision, recall, and F1-score.
+        tuple: (rank_metrics, overall_metrics) where:
+            - rank_metrics: dict[str, dict[str,float]] with per-rank metrics
+                Each rank has "accuracy", "f1", and "count" keys.
+            - overall_metrics: dict[str,float] with hierarchical metrics
+                Contains "hp", "hr", "hf" keys.
 
     Notes
     -----
-        - Predictions for ranks not included in the `ranks` list will be ignored.
+        - Predictions for ranks not included in the `RANKS` list will be ignored.
         - The `dict_match` and `get_metrics` helper functions used to calculate
           the num correct predictions and the classification metrics, respectively.
     """
-    out_dict = {}
+    rank_metrics = {}
     for rank in RANKS:  # Go through each rank and build classification metrics dict
         true_names = [
             true_dict[rank]
@@ -444,14 +445,18 @@ def classify_report(
             if rank in pred_dict
         ]
         pred_names = [pred_dict[rank] for pred_dict in pred_dicts if rank in pred_dict]
-        out_dict[rank] = {"count": float(len(pred_names))}
         metrics = get_metrics(true_names, pred_names, rank, verbose=verbose)
-        # Convert integer values in metrics to floats
-        metrics = {k: float(v) if isinstance(v, int) else v for k, v in metrics.items()}
-        out_dict[rank].update(metrics)
-    hierarch_metrics = hierarchical_metrics(true_dicts, pred_dicts, verbose=verbose)
-    out_dict.update(hierarch_metrics)
-    return out_dict
+        # Store with consistent structure
+        rank_metrics[rank] = {
+            "accuracy": float(metrics.get("accuracy", 0.0)),
+            "f1": float(metrics.get("f1", 0.0)),
+            "count": float(len(pred_names))
+        }
+
+    # Get hierarchical metrics as overall metrics
+    overall_metrics = hierarchical_metrics(true_dicts, pred_dicts, verbose=verbose)
+
+    return rank_metrics, overall_metrics
 
 
 def custom_collate_fn(
@@ -552,69 +557,60 @@ async def rag_evaluate(
     return pd.DataFrame.from_dict(scores)
 
 
-def write_overall_metrics(csv_filename: str, data: Dict[str, Dict[str, float]]) -> None:
+def write_overall_metrics(
+    csv_filename: str,
+    rank_metrics: Dict[str, Dict[str, float]],
+    overall_metrics: Dict[str, float]
+) -> None:
     """
-    Write overall metrics to a CSV file.
+    Write taxonomic metrics to a CSV file.
 
-    This function takes a dictionary of metrics and writes them to a CSV file.
-    The CSV file will include a header row with "Rank", "Accuracy", and "F1".
-    For each rank in the data, it writes the corresponding accuracy and F1 score
-    if available. Additionally, it handles rank-level performance metrics and overall
-    metrics (like hr, hp, hf) separately, adding empty rows for readability.
+    This function writes both rank-level and overall hierarchical metrics to a CSV file.
+    The output is structured with rank-level metrics first, followed by overall metrics.
 
     Args:
         csv_filename (str): The path to the CSV file where the metrics will be written.
-        data (dict): A dictionary containing metrics for each rank. Each key is a rank,
-                     and the value is either:
-                     - A dictionary with "accuracy" and "f1" keys.
-                     - A single value representing a metric.
+        rank_metrics (dict): Dictionary with rank names as keys and dicts of metrics
+                            as values. Each value dict contains "accuracy", "f1", and
+                            "count" keys.
+        overall_metrics (dict): Dictionary with overall metric names as keys and float
+                               values. Typically contains "hp", "hr", "hf" for
+                               hierarchical metrics.
 
     Raises
     ------
         IOError: If there is an issue writing to the file.
-
-    Notes
-    -----
-        - Rank-level performance metrics (not accuracy or F1) are written separately.
-        - Overall metrics (not specific to taxonomic ranks) are written at the end.
-        - Empty rows are added for better readability in the CSV file.
     """
     with open(csv_filename, mode="w", newline="") as file:
         writer = csv.writer(file)
-        # Write the header
+
+        # Write rank-level metrics
         writer.writerow(["Rank", "Accuracy", "F1", "Attempts"])
-        tax_wises = []  # For rank-level performance metrics that aren't accuracy and f1
-        overall_metrics = []
-        # Write each rank's metrics
-        for rank, metrics in data.items():
-            if isinstance(metrics, dict):  # For ranks with 'accuracy', 'f1' and 'count'
-                writer.writerow(
-                    [
-                        rank,
-                        metrics.get("accuracy", ""),
-                        metrics.get("f1", ""),
-                        metrics.get("count", ""),
-                    ]
-                )
-            elif rank in RANKS:  # For other rank-level performance metrics
-                tax_wises.append([rank, metrics, ""])
-            # Other metrics not individualized to taxonomic ranks
-            # note: `rank` here is metric name str, `metrics` is the float/int value
+        for rank in RANKS:
+            if rank in rank_metrics:
+                metrics = rank_metrics[rank]
+                writer.writerow([
+                    rank,
+                    f"{metrics.get('accuracy', 0.0):.4f}",
+                    f"{metrics.get('f1', 0.0):.4f}",
+                    int(metrics.get("count", 0))
+                ])
             else:
-                overall_metrics.append(rank, metrics, "")
-        writer.writerow([])  # Empty row for readability
-        for row in tax_wises:
-            writer.writerow(row)
-        writer.writerow([])  # Empty row for readability
-        # Write overall metrics header
-        writer.writerow(["Overall Metrics", "", "", ""])
-        for row in overall_metrics:
-            writer.writerow(row)
+                writer.writerow([rank, "", "", 0])
+
+        # Add separator
+        writer.writerow([])
+
+        # Write overall/hierarchical metrics
+        writer.writerow(["Metric", "Value"])
+        writer.writerow(["Hierarchical Precision (hp)", f"{overall_metrics.get('hp', 0.0)}"])
+        writer.writerow(["Hierarchical Recall (hr)", f"{overall_metrics.get('hr', 0.0)}"])
+        writer.writerow(["Hierarchical F1 (hf)", f"{overall_metrics.get('hf', 0.0)}"])
 
 
 def extract_tax_metrics(
     result_obj: List[Dict[str, Any]], verbose: bool = True
-) -> Tuple[Dict[str, Dict[str, Union[float, int]]], List[Dict[str, str]]]:
+) -> Tuple[Dict[str, Dict[str, float]], Dict[str, float], List[Dict[str, str]]]:
     """
     Extract classification metrics from a result object.
 
@@ -630,20 +626,20 @@ def extract_tax_metrics(
     Returns
     -------
         tuple: A tuple containing:
-            - class_report (dict): A classification report generated by
-              `classify_report` summarizing the performance metrics.
+            - rank_metrics (dict): Rank-level classification metrics.
+            - overall_metrics (dict): Overall/hierarchical metrics.
             - guess_classes (list): A list of guessed class labels extracted
               from the input.
     """
     true_classes = [out_dict["true_class"] for out_dict in result_obj]
     guess_classes = [out_dict["guess_class"] for out_dict in result_obj]
-    class_report = classify_report(true_classes, guess_classes, verbose=verbose)
-    return class_report, guess_classes
+    rank_metrics, overall_metrics = classify_report(true_classes, guess_classes, verbose=verbose)
+    return rank_metrics, overall_metrics, guess_classes
 
 
 def extract_tax_metrics_rs(
     result_obj: List[Dict[str, Any]], verbose: bool = True
-) -> Tuple[Dict[str, Dict[str, Union[float, int]]], List[Dict[str, str]]]:
+) -> Tuple[Dict[str, Dict[str, float]], Dict[str, float], List[Dict[str, str]]]:
     """
     Extract taxonomic metrics and enrich guess class dictionaries with RSID information.
 
@@ -655,19 +651,19 @@ def extract_tax_metrics_rs(
     Returns
     -------
         tuple: A tuple containing:
-            - class_report (dict): A classification report generated from the true and
-              guessed classes.
+            - rank_metrics (dict): Rank-level classification metrics.
+            - overall_metrics (dict): Overall/hierarchical metrics.
             - guess_classes (list of dict): A list of guess class dictionaries, each
               enriched with an "RSID" key.
     """
     true_classes = [out_dict["true_class"] for out_dict in result_obj]
     guess_classes = [out_dict["guess_class"] for out_dict in result_obj]
-    class_report = classify_report(true_classes, guess_classes, verbose=verbose)
+    rank_metrics, overall_metrics = classify_report(true_classes, guess_classes, verbose=verbose)
     rsids = [out_dict["RSID"] for out_dict in result_obj]
     # Add RSID to each guess_class dictionary
     for guess_class, rsid in zip(guess_classes, rsids):
         guess_class["RSID"] = rsid
-    return class_report, guess_classes
+    return rank_metrics, overall_metrics, guess_classes
 
 
 def write_preds_to_csv(guess_classes: List[Dict[str, str]], csv_filename: str) -> None:
@@ -781,27 +777,27 @@ def hierarchical_metrics(
 
     for true_dict, pred_dict in zip(true_dicts, pred_dicts):
         # Build the ancestor paths for true and predicted in a single loop
-        anc_true = []
-        anc_pred = []
+        ancestor_true: List[str] = []
+        ancestor_pred: List[str] = []
 
         for rank in ranks:
             true_taxa = true_dict.get(rank, "")
             pred_taxa = pred_dict.get(rank, "")
-            # Check and append to anc_true
+            # Check and append to ancestor_true
             if true_taxa.strip():
-                anc_true.append(true_taxa.lower())
+                ancestor_true.append(true_taxa.lower())
             else:
-                # Stop adding to anc_true if a rank is missing
+                # Stop adding to ancestor_true if a rank is missing
                 break
-            # Check and append to anc_pred
+            # Check and append to ancestor_pred
             if pred_taxa.strip():
-                anc_pred.append(pred_taxa.lower())
+                ancestor_pred.append(pred_taxa.lower())
             else:
-                # Stop adding to anc_pred if a rank is missing
+                # Stop adding to ancestor_pred if a rank is missing
                 break
 
-        set_true = set(anc_true)
-        set_pred = set(anc_pred)
+        set_true = set(ancestor_true)
+        set_pred = set(ancestor_pred)
         inter_size = len(set_true & set_pred)
 
         # Precision: |intersection| / |predicted path|

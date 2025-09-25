@@ -108,4 +108,6 @@ To run experiments on the rare species dataset, use the following scripts:
 
 The results of the experiments, including taxonomic classifications and evaluation metrics, are saved as CSV files in the specified output directory:
 - Itemized classification predictions: `RS_<model>_predictions_<date>_<time>.csv`
-- Rank-wise classification metrics: `RS_<model>_tax_metrics_<date>_<time>.csv`
+- Classification metrics: `RS_<model>_tax_metrics_<date>_<time>.csv`
+  - Contains rank-level metrics (accuracy, F1, attempts) for each taxonomic rank
+  - Includes hierarchical metrics (hp, hr, hf) in a separate section
