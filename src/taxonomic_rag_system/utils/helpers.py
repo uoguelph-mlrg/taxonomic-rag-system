@@ -49,12 +49,15 @@ Functions:
     - write_preds_to_csv: Write prediction data to a CSV file.
     - write_any_preds_to_csv: Write prediction data to a CSV file with ID handling.
     - hierarchical_metrics: Hierarchical precision (hp), recall (hr), and F1 (hf).
+    - load_api_keys: Load API keys from files in home directory
 """
 
 import base64
 import csv
+import os
 import sys
 from io import BytesIO
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -73,6 +76,44 @@ from sklearn.preprocessing import LabelEncoder
 
 
 RANKS = ["Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"]
+
+
+def load_api_keys() -> None:
+    """Load API keys from files.
+
+    OpenAI API key is required, OpenRouter and Cohere API keys are optional.
+
+    Read API keys from files in home dir - `~/.openai.key`,
+    `~/.openrouter.key` and `~/.cohere.key`.
+    """
+    try:
+        with open(Path.home() / ".openai.key", "r") as f:
+            os.environ["OPENAI_API_KEY"] = f.read().strip()
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            "Could not find OpenAI API key at ~/.openai.key. "
+            "This key is required for the model to function."
+        ) from None
+
+    try:
+        with open(Path.home() / ".openrouter.key", "r") as f:
+            os.environ["OPENROUTER_API_KEY"] = f.read().strip()
+    except FileNotFoundError:
+        # OpenRouter key is optional, only log a warning
+        print(
+            "Warning: Could not find OpenRouter API key at ~/.openrouter.key. "
+            "This is fine if you're not using OpenRouter models."
+        )
+
+    try:
+        with open(Path.home() / ".cohere.key", "r") as f:
+            os.environ["COHERE_API_KEY"] = f.read().strip()
+    except FileNotFoundError:
+        # Cohere key is optional, only log a warning
+        print(
+            "Warning: Could not find Cohere API key at ~/.cohere.key. "
+            "This is fine if you're not using reranking functionality."
+        )
 
 
 def format_context(docs: List[Document]) -> str:
