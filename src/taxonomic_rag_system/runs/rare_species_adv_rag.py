@@ -202,13 +202,21 @@ async def main() -> None:
                         continue
                     hier = rsid_to_hier.get(str(rsid))
                     if hier and isinstance(obj.get("response"), dict):
-                        gc = {}
+                        # Preserve original response and attach hierarchical metrics under "hier_metrics"
                         try:
-                            gc = dict((obj.get("response") or {}).get("guess_class", {}) or {})
+                            resp = dict(obj.get("response") or {})
                         except Exception:
-                            gc = {}
-                        gc.update(hier)
-                        obj["response"] = {"guess_class": gc}
+                            resp = obj.get("response") or {}
+                        try:
+                            gc = dict((resp.get("guess_class") or {}))
+                        except Exception:
+                            gc = resp.get("guess_class") or {}
+                        resp["hier_metrics"] = dict(hier)
+                        if isinstance(gc, dict):
+                            gc_with_metrics = dict(gc)
+                            gc_with_metrics.update(hier)
+                            resp["guess_class"] = gc_with_metrics
+                        obj["response"] = resp
                         line = json.dumps(obj, ensure_ascii=False) + "\n"
                     lines_out.append(line)
             with open(prompt_jsonl_name, "w", encoding="utf-8") as dst:

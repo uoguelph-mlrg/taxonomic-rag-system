@@ -187,7 +187,7 @@ async def main() -> None:
                     continue
                 m = sample_hierarchical_metrics(s.get("true_class", {}), s.get("guess_class", {}))
                 rsid_to_hier[str(rsid_val)] = m
-            # Read and rewrite file with augmented guess_class
+            # Read and rewrite file with augmented response (preserve full response)
             lines_out = []
             with open(prompt_jsonl_name, "r", encoding="utf-8") as src:
                 for line in src:
@@ -202,13 +202,25 @@ async def main() -> None:
                         continue
                     hier = rsid_to_hier.get(str(rsid))
                     if hier and isinstance(obj.get("response"), dict):
-                        gc = {}
+                        # Preserve original response; attach hierarchical metrics under "hier_metrics"
                         try:
-                            gc = dict((obj.get("response") or {}).get("guess_class", {}) or {})
+                            # Ensure we don't mutate nested structures unexpectedly
+                            resp = dict(obj.get("response") or {})
                         except Exception:
-                            gc = {}
-                        gc.update(hier)
-                        obj["response"] = {"guess_class": gc}
+                            resp = obj.get("response") or {}
+                        # Attach guess_class metrics without altering existing keys
+                        try:
+                            gc = dict((resp.get("guess_class") or {}))
+                        except Exception:
+                            gc = resp.get("guess_class") or {}
+                        # Add HP/HR/HF into a dedicated field to avoid clobbering richer fields
+                        resp["hier_metrics"] = dict(hier)
+                        # Optionally also mirror metrics into guess_class for convenience (non-destructive)
+                        if isinstance(gc, dict):
+                            gc_with_metrics = dict(gc)
+                            gc_with_metrics.update(hier)
+                            resp["guess_class"] = gc_with_metrics
+                        obj["response"] = resp
                         line = json.dumps(obj, ensure_ascii=False) + "\n"
                     lines_out.append(line)
             with open(prompt_jsonl_name, "w", encoding="utf-8") as dst:
