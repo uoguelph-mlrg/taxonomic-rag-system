@@ -131,7 +131,9 @@ async def main() -> None:
         interval=interval, verbose=2
     )
     # 3. Extract Results
-    rank_metrics, overall_metrics, preds = extract_tax_metrics_rs(rarespp_predictions, verbose=True)
+    rank_metrics, overall_metrics, preds = extract_tax_metrics_rs(
+        rarespp_predictions, verbose=True
+    )
 
     if write:
         # Create output directory if it doesn't exist

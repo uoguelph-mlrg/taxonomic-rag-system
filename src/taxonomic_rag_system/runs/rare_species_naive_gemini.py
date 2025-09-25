@@ -101,7 +101,9 @@ async def main() -> None:
     rarespp_predictions = await naive_model.rarespecies_dataset_run(
         interval=interval, verbose=2
     )
-    rank_metrics, overall_metrics, preds = extract_tax_metrics(rarespp_predictions, verbose=True)
+    rank_metrics, overall_metrics, preds = extract_tax_metrics(
+        rarespp_predictions, verbose=True
+    )
 
     if write:
         # Create output directory if it doesn't exist

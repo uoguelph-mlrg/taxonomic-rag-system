@@ -450,7 +450,7 @@ def classify_report(
         rank_metrics[rank] = {
             "accuracy": float(metrics.get("accuracy", 0.0)),
             "f1": float(metrics.get("f1", 0.0)),
-            "count": float(len(pred_names))
+            "count": float(len(pred_names)),
         }
 
     # Get hierarchical metrics as overall metrics
@@ -560,7 +560,7 @@ async def rag_evaluate(
 def write_overall_metrics(
     csv_filename: str,
     rank_metrics: Dict[str, Dict[str, float]],
-    overall_metrics: Dict[str, float]
+    overall_metrics: Dict[str, float],
 ) -> None:
     """
     Write taxonomic metrics to a CSV file.
@@ -589,12 +589,14 @@ def write_overall_metrics(
         for rank in RANKS:
             if rank in rank_metrics:
                 metrics = rank_metrics[rank]
-                writer.writerow([
-                    rank,
-                    f"{metrics.get('accuracy', 0.0):.4f}",
-                    f"{metrics.get('f1', 0.0):.4f}",
-                    int(metrics.get("count", 0))
-                ])
+                writer.writerow(
+                    [
+                        rank,
+                        f"{metrics.get('accuracy', 0.0):.4f}",
+                        f"{metrics.get('f1', 0.0):.4f}",
+                        int(metrics.get("count", 0)),
+                    ]
+                )
             else:
                 writer.writerow([rank, "", "", 0])
 
@@ -603,8 +605,12 @@ def write_overall_metrics(
 
         # Write overall/hierarchical metrics
         writer.writerow(["Metric", "Value"])
-        writer.writerow(["Hierarchical Precision (hp)", f"{overall_metrics.get('hp', 0.0)}"])
-        writer.writerow(["Hierarchical Recall (hr)", f"{overall_metrics.get('hr', 0.0)}"])
+        writer.writerow(
+            ["Hierarchical Precision (hp)", f"{overall_metrics.get('hp', 0.0)}"]
+        )
+        writer.writerow(
+            ["Hierarchical Recall (hr)", f"{overall_metrics.get('hr', 0.0)}"]
+        )
         writer.writerow(["Hierarchical F1 (hf)", f"{overall_metrics.get('hf', 0.0)}"])
 
 
@@ -633,7 +639,9 @@ def extract_tax_metrics(
     """
     true_classes = [out_dict["true_class"] for out_dict in result_obj]
     guess_classes = [out_dict["guess_class"] for out_dict in result_obj]
-    rank_metrics, overall_metrics = classify_report(true_classes, guess_classes, verbose=verbose)
+    rank_metrics, overall_metrics = classify_report(
+        true_classes, guess_classes, verbose=verbose
+    )
     return rank_metrics, overall_metrics, guess_classes
 
 
@@ -658,7 +666,9 @@ def extract_tax_metrics_rs(
     """
     true_classes = [out_dict["true_class"] for out_dict in result_obj]
     guess_classes = [out_dict["guess_class"] for out_dict in result_obj]
-    rank_metrics, overall_metrics = classify_report(true_classes, guess_classes, verbose=verbose)
+    rank_metrics, overall_metrics = classify_report(
+        true_classes, guess_classes, verbose=verbose
+    )
     rsids = [out_dict["RSID"] for out_dict in result_obj]
     # Add RSID to each guess_class dictionary
     for guess_class, rsid in zip(guess_classes, rsids):

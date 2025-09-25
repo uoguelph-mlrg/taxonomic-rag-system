@@ -116,7 +116,9 @@ def test_extract_tax_metrics():
         },
     ]
 
-    rank_metrics, overall_metrics, guess_classes = extract_tax_metrics(result_obj, verbose=False)
+    rank_metrics, overall_metrics, guess_classes = extract_tax_metrics(
+        result_obj, verbose=False
+    )
 
     assert "Kingdom" in rank_metrics
     assert "Phylum" in rank_metrics
@@ -139,7 +141,9 @@ def test_extract_tax_metrics_rs():
         }
     ]
 
-    rank_metrics, overall_metrics, guess_classes = extract_tax_metrics_rs(result_obj, verbose=False)
+    rank_metrics, overall_metrics, guess_classes = extract_tax_metrics_rs(
+        result_obj, verbose=False
+    )
 
     assert len(guess_classes) == 1
     assert guess_classes[0]["RSID"] == "RS001"
@@ -326,7 +330,9 @@ def test_classify_report():
         {"Kingdom": "Animalia", "Phylum": "Arthropoda"},
         {"Kingdom": "Animalia", "Phylum": "Mollusca"},
     ]
-    rank_metrics, overall_metrics = classify_report(true_dicts, pred_dicts, verbose=False)
+    rank_metrics, overall_metrics = classify_report(
+        true_dicts, pred_dicts, verbose=False
+    )
     assert "count" in rank_metrics["Kingdom"]
     assert "accuracy" in rank_metrics["Kingdom"]
     assert rank_metrics["Kingdom"]["count"] == 2.0
