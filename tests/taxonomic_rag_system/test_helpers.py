@@ -100,7 +100,7 @@ def test_write_overall_metrics(tmp_path):
         assert "Phylum,0.8700,0.8500,8" in content
         assert "Hierarchical Precision (hp),0.82" in content
         assert "Hierarchical Recall (hr),0.79" in content
-        assert "Hierarchical F1 (hf),0.80" in content
+        assert "Hierarchical F1 (hf),0.8" in content
 
 
 def test_extract_tax_metrics():

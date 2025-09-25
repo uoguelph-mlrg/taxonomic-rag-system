@@ -727,7 +727,7 @@ def write_any_preds_to_csv(
         writer = csv.writer(file)
         # Write header for guess classes if the file is new
         if file.tell() == 0:
-            writer.writerow([cols])
+            writer.writerow(cols)
         for guess in guess_classes:
             row = [guess.get(col, "") for col in cols]
             writer.writerow(row)
