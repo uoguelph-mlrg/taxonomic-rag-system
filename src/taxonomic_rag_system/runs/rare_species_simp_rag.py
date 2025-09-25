@@ -53,6 +53,7 @@ from taxonomic_rag_system.utils.helpers import (
     hierarchical_metrics,
     write_per_rank_binary_jsonl,
     sample_hierarchical_metrics,
+    per_rank_hierarchical_metrics,
 )
 
 
@@ -146,6 +147,11 @@ async def main() -> None:
             [s.get("guess_class", {}) for s in rarespp_predictions],
             verbose=True,
         )
+        pr_hm = per_rank_hierarchical_metrics(
+            [s.get("true_class", {}) for s in rarespp_predictions],
+            [s.get("guess_class", {}) for s in rarespp_predictions],
+            verbose=False,
+        )
         final_metrics_csv_name = str(
             output_path + f"RS_simpRAG_tax_metrics_hierarchical_{current_date}_{current_time}.csv"
         )
@@ -162,6 +168,9 @@ async def main() -> None:
         )
         write_preds_to_csv(preds, predictions_csv_name)
         overalls_with_hier_main = dict(overalls)
+        for rank, metrics in overalls_with_hier_main.items():
+            if isinstance(metrics, dict) and rank in pr_hm:
+                metrics.update(pr_hm[rank])
         overalls_with_hier_main.update(hm)
         write_overall_metrics(final_metrics_csv_name, overalls_with_hier_main)
         write_rank_attempts_csv(rank_attempts_csv_name, overalls, total_samples=len(preds))
@@ -221,6 +230,11 @@ async def main() -> None:
             [s.get("guess_class", {}) for s in filtered_results],
             verbose=True,
         )
+        pr_hm_uq = per_rank_hierarchical_metrics(
+            [s.get("true_class", {}) for s in filtered_results],
+            [s.get("guess_class", {}) for s in filtered_results],
+            verbose=False,
+        )
 
         final_metrics_csv_name_uq = str((uq_dir_path / f"RS_simpRAG_tax_metrics_hierarchical_{current_date}_{current_time}.csv").as_posix())
         predictions_csv_name_uq = str((uq_dir_path / f"RS_simpRAG_predictions_{current_date}_{current_time}.csv").as_posix())
@@ -228,6 +242,9 @@ async def main() -> None:
         per_rank_jsonl_name_uq = str((uq_dir_path / f"RS_simpRAG_per_rank_binary_{current_date}_{current_time}.jsonl").as_posix())
         write_preds_to_csv(preds_uq, predictions_csv_name_uq)
         overalls_uq_with_hier = dict(overalls_uq)
+        for rank, metrics in overalls_uq_with_hier.items():
+            if isinstance(metrics, dict) and rank in pr_hm_uq:
+                metrics.update(pr_hm_uq[rank])
         overalls_uq_with_hier.update(hm_uq)
         write_overall_metrics(final_metrics_csv_name_uq, overalls_uq_with_hier)
         write_rank_attempts_csv(rank_attempts_csv_name_uq, overalls_uq, total_samples=len(preds_uq))

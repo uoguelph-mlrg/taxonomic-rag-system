@@ -600,24 +600,24 @@ def write_overall_metrics(csv_filename: str, data: Dict[str, Dict[str, float]]) 
         agg_hr = data.get("hr", "") if not isinstance(data.get("hr", {}), dict) else ""
         agg_hf = data.get("hf", "") if not isinstance(data.get("hf", {}), dict) else ""
 
-        # Write the header with aggregated hierarchical metric columns
+        # Write the header with hierarchical metric columns
         writer.writerow(["Rank", "Accuracy", "F1", "HP", "HR", "HF"])
 
-        # Write each rank's metrics, repeating aggregated HP/HR/HF for convenience
-        for rank, metrics in data.items():
-            if isinstance(metrics, dict):  # For ranks with 'accuracy' and 'f1'
+        # Write rank metrics only (stable order using canonical ranks)
+        for rank in RANKS:
+            metrics = data.get(rank)
+            if isinstance(metrics, dict):
                 writer.writerow(
                     [
                         rank,
                         metrics.get("accuracy", ""),
                         metrics.get("f1", ""),
-                        agg_hp,
-                        agg_hr,
-                        agg_hf,
+                        metrics.get("HP", ""),
+                        metrics.get("HR", ""),
+                        metrics.get("HF", ""),
                     ]
                 )
-            else:  # For PropRanksCorrect, Ranks, hp/hr/hf rows
-                writer.writerow([rank, metrics, "", agg_hp, agg_hr, agg_hf])
+        # Do not append aggregated Overall row unless specifically requested
 
 
 # Write rank-level attempts (Count) to CSV
@@ -984,6 +984,89 @@ def hierarchical_metrics(
         print(f"Hierarchical F1 (hf): {hf:.3f}")
 
     return {"hp": hp, "hr": hr, "hf": hf}
+
+
+def per_rank_hierarchical_metrics(
+    true_dicts: List[Dict[str, str]],
+    pred_dicts: List[Dict[str, str]],
+    verbose: bool = False,
+) -> Dict[str, Dict[str, float]]:
+    """
+    Compute hierarchical metrics (HP/HR/HF) aggregated per rank.
+
+    For each rank r, we consider only samples where r is present in the prediction
+    (consistent with `classify_report`). For each such sample, we build the ancestor
+    paths for true/predicted from Kingdom down to r with early stopping at the first
+    missing rank, then compute:
+      - HP_i = |intersection| / |predicted path|
+      - HR_i = |intersection| / |true path|
+    Finally, we macro-average HP and HR over considered samples and compute HF.
+
+    Returns a mapping rank -> {"HP": float, "HR": float, "HF": float}.
+    If a rank has no considered samples, values are set to empty strings.
+    """
+    ranks_lower = [r.lower() for r in RANKS]
+    # Normalize dict keys to lowercase for robust lookup
+    t_norm = [{k.lower(): v for k, v in (td or {}).items()} for td in true_dicts]
+    p_norm = [{k.lower(): v for k, v in (pd or {}).items()} for pd in pred_dicts]
+
+    result: Dict[str, Dict[str, float]] = {}
+
+    for rank in RANKS:
+        r_low = rank.lower()
+        upto_idx = ranks_lower.index(r_low)  # inclusive index of r_low
+        hp_sum = 0.0
+        hr_sum = 0.0
+        n = 0
+
+        for td, pd in zip(t_norm, p_norm):
+            # Only include samples where this rank was attempted/present in prediction
+            if r_low not in pd:
+                continue
+
+            anc_true: List[str] = []
+            anc_pred: List[str] = []
+            # Walk from Kingdom..r with early stopping at the first missing rank
+            stop_true = False
+            stop_pred = False
+            for r2 in ranks_lower[: upto_idx + 1]:
+                if not stop_true:
+                    t_val = td.get(r2, "")
+                    if t_val.strip():
+                        anc_true.append(t_val.lower())
+                    else:
+                        stop_true = True
+                if not stop_pred:
+                    p_val = pd.get(r2, "")
+                    if p_val.strip():
+                        anc_pred.append(p_val.lower())
+                    else:
+                        stop_pred = True
+
+            set_true = set(anc_true)
+            set_pred = set(anc_pred)
+            inter = len(set_true & set_pred)
+
+            hp_i = inter / len(set_pred) if len(set_pred) > 0 else 0.0
+            hr_i = inter / len(set_true) if len(set_true) > 0 else 0.0
+            hp_sum += hp_i
+            hr_sum += hr_i
+            n += 1
+
+        if n > 0:
+            hp = hp_sum / n
+            hr = hr_sum / n
+            hf = (2 * hp * hr / (hp + hr)) if (hp + hr) > 0 else 0.0
+            result[rank] = {"HP": hp, "HR": hr, "HF": hf}
+        else:
+            # Keep blanks to avoid implying 0 performance when there are no attempts
+            result[rank] = {"HP": "", "HR": "", "HF": ""}
+
+        if verbose:
+            vals = result[rank]
+            print(f"Per-rank hierarchical metrics for {rank}: HP={vals['HP']}, HR={vals['HR']}, HF={vals['HF']}")
+
+    return result
 
 
 def sample_hierarchical_metrics(true_dict: Dict[str, str], pred_dict: Dict[str, str]) -> Dict[str, float]:
