@@ -30,6 +30,8 @@ uv sync --dev
 source .venv/bin/activate
 ```
 
+**Note:** PyTorch 2.6.0 is a dependency and does not provide wheels for Intel-based Macs (x86_64).
+
 ### Prerequisites
 
 Replicating experiments require an OpenAI API key, Cohere API key, and OpenRouter API key for the vision and language models. The scripts expect files in your home directory (called `.openai.key`, `.cohere.key`, `.openrouter.key`, respectively) that contain your keys.
