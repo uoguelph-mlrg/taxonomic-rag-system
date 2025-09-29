@@ -179,27 +179,29 @@ async def main() -> None:
         try:
             # Use the model's system prompt if available; otherwise write an empty prompt
             prompt_text = getattr(getattr(naive_model, "model", object()), "system_prompt", "")
+            temp_val = getattr(getattr(naive_model, "model", object()), "temp", None)
+            target_params = {
+                "temperature": temp_val if temp_val is not None else "N/A",
+                "top_p": "N/A",
+            }
             with open(prompt_jsonl_name, "w", encoding="utf-8") as dst:
                 for sample in rarespp_predictions:
                     try:
                         rsid_val = sample.get("RSID")
-                        # Include per-sample hierarchical metrics (HP/HR/HF)
-                        hier_metrics = sample_hierarchical_metrics(
-                            sample.get("true_class", {}), sample.get("guess_class", {})
-                        )
-                        # Copy and sanitize guess_class (avoid duplicating RSID inside)
-                        gc = dict(sample.get("guess_class", {}) or {})
-                        gc.pop("RSID", None)
-                        # Augment guess_class with HP/HR/HF for convenience
-                        gc.update(hier_metrics)
-                        response_obj = {"guess_class": gc}
+                        gc = sample.get("guess_class") or {}
+                        response_obj = {"classification": gc}
                         json_line = json.dumps(
-                            {"RSID": rsid_val, "prompt": prompt_text, "response": response_obj},
+                            {
+                                "rsid": rsid_val,
+                                "prompt": prompt_text,
+                                "response": response_obj,
+                                "targetLLM_params": target_params,
+                            },
                             ensure_ascii=False,
                         )
-                        dst.write(json_line + "\n")
                     except Exception:
-                        continue
+                        json_line = json.dumps({}, ensure_ascii=False)
+                    dst.write(json_line + "\n")
         except Exception:
             pass
 

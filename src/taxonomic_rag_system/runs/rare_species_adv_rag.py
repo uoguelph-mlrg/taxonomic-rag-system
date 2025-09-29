@@ -203,7 +203,7 @@ async def main() -> None:
                     except Exception:
                         lines_out.append(line)
                         continue
-                    rsid = obj.get("RSID")
+                    rsid = obj.get("rsid") or obj.get("RSID")
                     if rsid is None:
                         lines_out.append(line)
                         continue
@@ -214,18 +214,14 @@ async def main() -> None:
                             resp = dict(obj.get("response") or {})
                         except Exception:
                             resp = obj.get("response") or {}
-                        try:
-                            gc = dict((resp.get("guess_class") or {}))
-                        except Exception:
-                            gc = resp.get("guess_class") or {}
                         ba = rsid_to_binary.get(str(rsid))
                         if ba is not None:
                             resp["BinaryAccuracy"] = ba
                         resp["hier_metrics"] = dict(hier)
-                        # Keep guess_class pure taxonomy; avoid duplicating metrics inside it
-                        if isinstance(gc, dict):
-                            resp["guess_class"] = gc
                         obj["response"] = resp
+                        # Ensure lowercase rsid only
+                        if "rsid" not in obj and obj.get("RSID") is not None:
+                            obj["rsid"] = obj.get("RSID")
                         line = json.dumps(obj, ensure_ascii=False) + "\n"
                     lines_out.append(line)
             with open(prompt_jsonl_name, "w", encoding="utf-8") as dst:
@@ -276,7 +272,7 @@ async def main() -> None:
                         obj = json.loads(line)
                     except Exception:
                         continue
-                    if obj.get("RSID") in filtered_rsids:
+                    if obj.get("rsid") in filtered_rsids or obj.get("RSID") in filtered_rsids:
                         dst.write(line)
         except Exception:
             pass

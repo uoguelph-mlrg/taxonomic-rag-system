@@ -204,7 +204,7 @@ async def main() -> None:
                     except Exception:
                         lines_out.append(line)
                         continue
-                    rsid = obj.get("RSID")
+                    rsid = obj.get("rsid") or obj.get("RSID")
                     if rsid is None:
                         lines_out.append(line)
                         continue
@@ -216,20 +216,15 @@ async def main() -> None:
                             resp = dict(obj.get("response") or {})
                         except Exception:
                             resp = obj.get("response") or {}
-                        # Attach guess_class metrics without altering existing keys
-                        try:
-                            gc = dict((resp.get("guess_class") or {}))
-                        except Exception:
-                            gc = resp.get("guess_class") or {}
                         # Add BinaryAccuracy first
                         ba = rsid_to_binary.get(str(rsid))
                         if ba is not None:
                             resp["BinaryAccuracy"] = ba
                         # Add HP/HR/HF into a dedicated field to avoid clobbering richer fields
                         resp["hier_metrics"] = dict(hier)
-                        # Do NOT mirror HP/HR/HF into guess_class to avoid duplication; keep guess_class pure taxonomy
-                        if isinstance(gc, dict):
-                            resp["guess_class"] = gc
+                        # Ensure lowercase key only
+                        if "rsid" not in obj and obj.get("RSID") is not None:
+                            obj["rsid"] = obj.get("RSID")
                         obj["response"] = resp
                         line = json.dumps(obj, ensure_ascii=False) + "\n"
                     lines_out.append(line)
@@ -288,7 +283,7 @@ async def main() -> None:
                         obj = json.loads(line)
                     except Exception:
                         continue
-                    if obj.get("RSID") in filtered_rsids:
+                    if obj.get("rsid") in filtered_rsids or obj.get("RSID") in filtered_rsids:
                         dst.write(line)
         except Exception:
             pass

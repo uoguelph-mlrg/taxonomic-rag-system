@@ -105,6 +105,9 @@ async def main() -> None:
 
     current_date = datetime.datetime.now().strftime("%Y-%m-%d")
     current_time = datetime.datetime.now().strftime("%H-%M-%S")
+    prompt_jsonl_name = str(
+        (Path(output_path) / f"RS_naiveVLM_gemini_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix()
+    )
 
     # 1. Build Model, 2. RareSpecies Run, 3. Extract Results
     naive_model = NaiveVLModel(model="google/gemini-2.0-flash-001")
@@ -157,7 +160,34 @@ async def main() -> None:
         write_rank_attempts_csv(rank_attempts_csv_name, overalls, total_samples=len(preds))
         # Write per-rank JSONL (full set)
         write_per_rank_binary_jsonl(rarespp_predictions, per_rank_jsonl_name)
-        # Augment prompt/response JSONL if present (Gemini run currently has no prompt JSONL path)
+        # Write prompt/response JSONL for Gemini naive model
+        try:
+            prompt_text = getattr(getattr(naive_model, "model", object()), "system_prompt", "")
+            temp_val = getattr(getattr(naive_model, "model", object()), "temp", None)
+            target_params = {
+                "temperature": temp_val if temp_val is not None else "N/A",
+                "top_p": "N/A",
+            }
+            with open(prompt_jsonl_name, "w", encoding="utf-8") as dst:
+                for sample in rarespp_predictions:
+                    try:
+                        rsid_val = sample.get("RSID")
+                        gc = sample.get("guess_class") or {}
+                        response_obj = {"classification": gc}
+                        json_line = json.dumps(
+                            {
+                                "rsid": rsid_val,
+                                "prompt": prompt_text,
+                                "response": response_obj,
+                                "targetLLM_params": target_params,
+                            },
+                            ensure_ascii=False,
+                        )
+                    except Exception:
+                        json_line = json.dumps({}, ensure_ascii=False)
+                    dst.write(json_line + "\n")
+        except Exception:
+            pass
 
         # Removed outputs_hierarchical_metrics directory and copies
 
@@ -206,6 +236,23 @@ async def main() -> None:
         write_per_rank_binary_jsonl(filtered, per_rank_jsonl_name_uq)
 
         # Removed outputs_uq_data_collection_hierarchical_metrics directory and associated copies
+
+        # Write filtered JSONL with prompt/response pairs to UQ directory (subset by RSID)
+        try:
+            filtered_rsids = {s.get("RSID") for s in filtered if s.get("RSID")}
+            uq_jsonl_name = str((uq_dir_path / f"RS_naiveVLM_gemini_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix())
+            with open(prompt_jsonl_name, "r", encoding="utf-8") as src, open(
+                uq_jsonl_name, "w", encoding="utf-8"
+            ) as dst:
+                for line in src:
+                    try:
+                        obj = json.loads(line)
+                    except Exception:
+                        continue
+                    if obj.get("rsid") in filtered_rsids or obj.get("RSID") in filtered_rsids:
+                        dst.write(line)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

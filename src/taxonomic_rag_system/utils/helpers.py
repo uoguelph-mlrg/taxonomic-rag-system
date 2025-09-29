@@ -1184,8 +1184,52 @@ def _ancestors_match_upto_parent(true_class: Dict[str, str], pred_class: Dict[st
     return True
 
 
-def build_per_rank_records(samples: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Construct per-rank records for each sample with strict binary labels.
+def _sample_hierarchical_metrics_at_rank(
+    true_dict: Dict[str, str], pred_dict: Dict[str, str], upto_rank: str
+) -> Dict[str, float]:
+    """Compute per-sample hierarchical HP/HR/HF up to the given rank (inclusive).
+
+    Uses the same early-stop ancestor path building as `per_rank_hierarchical_metrics`.
+    """
+    ranks_lower = [r.lower() for r in RANKS]
+    r_low = upto_rank.lower()
+    upto_idx = ranks_lower.index(r_low) if r_low in ranks_lower else len(ranks_lower) - 1
+
+    t_norm = {k.lower(): v for k, v in (true_dict or {}).items()}
+    p_norm = {k.lower(): v for k, v in (pred_dict or {}).items()}
+
+    anc_true: List[str] = []
+    anc_pred: List[str] = []
+    stop_true = False
+    stop_pred = False
+    for r2 in ranks_lower[: upto_idx + 1]:
+        if not stop_true:
+            t_val = t_norm.get(r2, "")
+            if isinstance(t_val, str) and t_val.strip():
+                anc_true.append(t_val.lower())
+            else:
+                stop_true = True
+        if not stop_pred:
+            p_val = p_norm.get(r2, "")
+            if isinstance(p_val, str) and p_val.strip():
+                anc_pred.append(p_val.lower())
+            else:
+                stop_pred = True
+
+    set_true = set(anc_true)
+    set_pred = set(anc_pred)
+    inter = len(set_true & set_pred)
+
+    hp_i = inter / len(set_pred) if len(set_pred) > 0 else 0.0
+    hr_i = inter / len(set_true) if len(set_true) > 0 else 0.0
+    hf_i = (2 * hp_i * hr_i / (hp_i + hr_i)) if (hp_i + hr_i) > 0 else 0.0
+    return {"HP": hp_i, "HR": hr_i, "HF": hf_i}
+
+
+def build_per_rank_records(
+    samples: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Construct per-rank records for each sample with strict binary labels and per-rank hierarchical accuracy.
 
     Output schema per record:
       {
@@ -1194,10 +1238,11 @@ def build_per_rank_records(samples: List[Dict[str, Any]]) -> List[Dict[str, Any]
         "rank": str,                      # e.g., "Kingdom"
         "pred": str,                      # predicted taxon or "N/A"
         "gold": str,                      # gold taxon
-        "ancestor_ok_upto_parent": bool,  # ancestors all correct
-        "abstained": bool,                # pred == "N/A"
-        "label_binary": int,              # 1 if pred==gold and ancestors correct, else 0
-        "depth_pred": int,                # deepest non-"N/A" rank for this RSID
+        "attempted": bool,                # whether this rank was attempted (pred available)
+        "ancestor_ok_upto_parent": bool,  # all ancestors up to parent correct
+        "binary_accuracy_current_rank": int,  # 1 if pred==gold and ancestors correct, else 0
+        "current_depth": int,             # depth of this record (equals rank_idx)
+        "hierarchical_accuracy_rank": float|str,  # HF at this rank; blank if not attempted
       }
     """
     records: List[Dict[str, Any]] = []
@@ -1206,29 +1251,36 @@ def build_per_rank_records(samples: List[Dict[str, Any]]) -> List[Dict[str, Any]
         rsid_str = "" if rsid is None else str(rsid)
         true_class = sample.get("true_class", {}) or {}
         pred_class = sample.get("guess_class", {}) or {}
-        depth_pred = _deepest_predicted_depth(pred_class)
 
         for rank in RANKS:
             rank_idx = RANK_TO_IDX[rank]
             pred_val = pred_class.get(rank, "N/A")
             gold_val = true_class.get(rank, "")
-            abstained = pred_val == "N/A"
+            # Check if this rank has a valid prediction (exists in pred_class, is a string, and not "N/A")
+            attempted = rank in pred_class and isinstance(pred_val, str) and pred_val != "N/A"
             ancestors_ok = _ancestors_match_upto_parent(true_class, pred_class, rank)
-            label_binary = int((not abstained) and (pred_val == gold_val) and ancestors_ok)
+            binary_label = int(attempted and (pred_val == gold_val) and ancestors_ok)
 
-            records.append(
-                {
-                    "rsid": rsid_str,
-                    "rank_idx": rank_idx,
-                    "rank": rank,
-                    "pred": pred_val,
-                    "gold": gold_val,
-                    "ancestor_ok_upto_parent": ancestors_ok,
-                    "abstained": abstained,
-                    "label_binary": label_binary,
-                    "depth_pred": depth_pred,
-                }
-            )
+            # Per-sample per-rank hierarchical accuracy (HF) only when attempted
+            if attempted:
+                hf_obj = _sample_hierarchical_metrics_at_rank(true_class, pred_class, rank)
+                hier_rank = float(hf_obj.get("HF", 0.0))
+            else:
+                hier_rank = ""
+
+            rec = {
+                "rsid": rsid_str,
+                "rank_idx": rank_idx,
+                "rank": rank,
+                "pred": pred_val,
+                "gold": gold_val,
+                "attempted": attempted,
+                "ancestor_ok_upto_parent": ancestors_ok,
+                "binary_accuracy_current_rank": binary_label,
+                "current_depth": rank_idx,
+                "hierarchical_accuracy_rank": hier_rank,
+            }
+            records.append(rec)
     return records
 
 
@@ -1283,8 +1335,11 @@ def write_sample_binary_hierarchical_json(samples: List[Dict[str, Any]], json_fi
         json.dump(records, f, ensure_ascii=False)
 
 
-def write_per_rank_binary_jsonl(samples: List[Dict[str, Any]], jsonl_filename: str) -> None:
-    """Write per-rank records with strict binary labels to a JSONL file.
+def write_per_rank_binary_jsonl(
+    samples: List[Dict[str, Any]],
+    jsonl_filename: str,
+) -> None:
+    """Write per-rank records with strict binary labels and per-rank hierarchical accuracy to a JSONL file.
 
     One line per (sample, rank) pair following `build_per_rank_records` schema.
     """
