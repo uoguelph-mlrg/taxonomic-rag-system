@@ -250,7 +250,10 @@ async def main() -> None:
                     except Exception:
                         continue
                     if obj.get("rsid") in filtered_rsids or obj.get("RSID") in filtered_rsids:
-                        dst.write(line)
+                        if "rsid" not in obj and obj.get("RSID") is not None:
+                            obj["rsid"] = obj.get("RSID")
+                        obj = {"rsid": obj.get("rsid"), "prompt": obj.get("prompt"), "response": obj.get("response")}
+                        dst.write(json.dumps(obj, ensure_ascii=False) + "\n")
         except Exception:
             pass
 

@@ -208,25 +208,12 @@ async def main() -> None:
                     if rsid is None:
                         lines_out.append(line)
                         continue
-                    hier = rsid_to_hier.get(str(rsid))
-                    if hier and isinstance(obj.get("response"), dict):
-                        # Preserve original response; attach hierarchical metrics under "hier_metrics"
-                        try:
-                            # Ensure we don't mutate nested structures unexpectedly
-                            resp = dict(obj.get("response") or {})
-                        except Exception:
-                            resp = obj.get("response") or {}
-                        # Add BinaryAccuracy first
-                        ba = rsid_to_binary.get(str(rsid))
-                        if ba is not None:
-                            resp["BinaryAccuracy"] = ba
-                        # Add HP/HR/HF into a dedicated field to avoid clobbering richer fields
-                        resp["hier_metrics"] = dict(hier)
-                        # Ensure lowercase key only
-                        if "rsid" not in obj and obj.get("RSID") is not None:
-                            obj["rsid"] = obj.get("RSID")
-                        obj["response"] = resp
-                        line = json.dumps(obj, ensure_ascii=False) + "\n"
+                    # Ensure lowercase 'rsid' only and keep minimal fields
+                    if "rsid" not in obj and obj.get("RSID") is not None:
+                        obj["rsid"] = obj.get("RSID")
+                    # Keep only rsid, prompt, response keys in order
+                    obj = {"rsid": obj.get("rsid"), "prompt": obj.get("prompt"), "response": obj.get("response")}
+                    line = json.dumps(obj, ensure_ascii=False) + "\n"
                     lines_out.append(line)
             with open(prompt_jsonl_name, "w", encoding="utf-8") as dst:
                 for ln in lines_out:
@@ -284,7 +271,11 @@ async def main() -> None:
                     except Exception:
                         continue
                     if obj.get("rsid") in filtered_rsids or obj.get("RSID") in filtered_rsids:
-                        dst.write(line)
+                        # Ensure minimal schema on copy
+                        if "rsid" not in obj and obj.get("RSID") is not None:
+                            obj["rsid"] = obj.get("RSID")
+                        obj = {"rsid": obj.get("rsid"), "prompt": obj.get("prompt"), "response": obj.get("response")}
+                        dst.write(json.dumps(obj, ensure_ascii=False) + "\n")
         except Exception:
             pass
 

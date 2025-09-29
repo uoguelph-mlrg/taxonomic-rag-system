@@ -254,7 +254,8 @@ class RAGChainBuilder:
                 resp_obj = str(response)
 
             with open(self._log_path, "a", encoding="utf-8") as fp:
-                json_line = json.dumps({"RSID": rsid, "prompt": prompt, "response": resp_obj}, ensure_ascii=False)
+                # Keep lowercase 'rsid' as the first key, followed by 'prompt' and 'response'
+                json_line = json.dumps({"rsid": rsid, "prompt": prompt, "response": resp_obj}, ensure_ascii=False)
                 fp.write(json_line + "\n")
         except Exception as log_err:
             # Do not crash the main pipeline for logging errors; just warn.
