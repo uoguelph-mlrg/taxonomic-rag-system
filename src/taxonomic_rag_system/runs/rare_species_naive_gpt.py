@@ -36,7 +36,6 @@ from taxonomic_rag_system.utils.helpers import (
     write_overall_metrics,
     write_preds_to_csv,
     write_rank_attempts_csv,
-    filter_nonempty_results,
     hierarchical_metrics,
     write_per_rank_binary_jsonl,
     sample_hierarchical_metrics,
@@ -202,69 +201,6 @@ async def main() -> None:
                     except Exception:
                         json_line = json.dumps({}, ensure_ascii=False)
                     dst.write(json_line + "\n")
-        except Exception:
-            pass
-
-        # Write filtered results (exclude samples with empty predictions) to outputs_uq_data_collection/
-        uq_dir_path = Path(output_path).parent / "outputs_uq_data_collection"
-        uq_dir_path.mkdir(parents=True, exist_ok=True)
-
-        filtered_results = filter_nonempty_results(rarespp_predictions)
-        overalls_uq, preds_uq = extract_tax_metrics_rs(filtered_results, verbose=True)
-        # Enrich preds_uq with RSID from filtered_results for downstream CSV writers
-        rsids_uq = [s.get("RSID") for s in filtered_results]
-        for g, r in zip(preds_uq, rsids_uq):
-            g["RSID"] = r
-
-        hm_uq = hierarchical_metrics(
-            [s.get("true_class", {}) for s in filtered_results],
-            [s.get("guess_class", {}) for s in filtered_results],
-            verbose=True,
-        )
-        pr_hm_uq = per_rank_hierarchical_metrics(
-            [s.get("true_class", {}) for s in filtered_results],
-            [s.get("guess_class", {}) for s in filtered_results],
-            verbose=False,
-        )
-        final_metrics_csv_name_uq = str((uq_dir_path / f"RS_naiveVLM_gpt_tax_metrics_hierarchical_{current_date}_{current_time}.csv").as_posix())
-        predictions_csv_name_uq = str((uq_dir_path / f"RS_naiveVLM_gpt_predictions_{current_date}_{current_time}.csv").as_posix())
-        # Legacy output path for per-sample binary CSV (optional)
-        # Removed per-sample binary CSV in UQ dir
-        rank_attempts_csv_name_uq = str((uq_dir_path / f"RS_naiveVLM_gpt_rank_attempts_{current_date}_{current_time}.csv").as_posix())
-        per_rank_jsonl_name_uq = str((uq_dir_path / f"RS_naiveVLM_gpt_per_rank_binary_{current_date}_{current_time}.jsonl").as_posix())
-        # Legacy output path for per-sample JSON (optional)
-        # Removed per-sample JSON in UQ dir
-        write_preds_to_csv(preds_uq, predictions_csv_name_uq)
-        overalls_uq_with_hier = dict(overalls_uq)
-        for rank, metrics in overalls_uq_with_hier.items():
-            if isinstance(metrics, dict) and rank in pr_hm_uq:
-                metrics.update(pr_hm_uq[rank])
-        overalls_uq_with_hier.update(hm_uq)
-        write_overall_metrics(final_metrics_csv_name_uq, overalls_uq_with_hier)
-        write_rank_attempts_csv(rank_attempts_csv_name_uq, overalls_uq, total_samples=len(preds_uq))
-        # Write per-rank JSONL (filtered)
-        write_per_rank_binary_jsonl(filtered_results, per_rank_jsonl_name_uq)
-        # Removed per-sample JSON (filtered)
-
-        # Removed outputs_uq_data_collection_hierarchical_metrics directory and copies
-
-        # Write filtered JSONL with prompt/response pairs to UQ directory (subset by RSID)
-        try:
-            filtered_rsids = {s.get("RSID") for s in filtered_results if s.get("RSID")}
-            uq_jsonl_name = str((uq_dir_path / f"RS_naiveVLM_gpt_prompt_response_pairs_{current_date}_{current_time}.jsonl").as_posix())
-            with open(prompt_jsonl_name, "r", encoding="utf-8") as src, open(
-                uq_jsonl_name, "w", encoding="utf-8"
-            ) as dst:
-                for line in src:
-                    try:
-                        obj = json.loads(line)
-                    except Exception:
-                        continue
-                    if obj.get("rsid") in filtered_rsids or obj.get("RSID") in filtered_rsids:
-                        if "rsid" not in obj and obj.get("RSID") is not None:
-                            obj["rsid"] = obj.get("RSID")
-                        obj = {"rsid": obj.get("rsid"), "prompt": obj.get("prompt"), "response": obj.get("response")}
-                        dst.write(json.dumps(obj, ensure_ascii=False) + "\n")
         except Exception:
             pass
 

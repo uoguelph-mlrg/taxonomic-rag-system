@@ -751,20 +751,7 @@ def extract_tax_metrics_rs(
     return class_report, guess_classes
 
 
-def filter_nonempty_results(result_obj: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Filter out samples whose predicted taxonomy is empty across all ranks.
-
-    A sample is kept if its "guess_class" contains at least one of the canonical
-    taxonomy ranks: Kingdom, Phylum, Class, Order, Family, Genus, Species.
-    """
-    canonical_ranks = {"Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"}
-    filtered: List[Dict[str, Any]] = []
-    for sample in result_obj:
-        guess = sample.get("guess_class", {}) or {}
-        has_any_rank = any(rank in guess for rank in canonical_ranks)
-        if has_any_rank:
-            filtered.append(sample)
-    return filtered
+    
 
 
 def validate_uq_outputs(
