@@ -9,11 +9,10 @@ Test cases use mock objects to simulate the behavior of external dependencies.
 """
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from taxonomic_rag_system.utils.out_models import Caption
 from taxonomic_rag_system.utils.vision_models import (
     DescriptiveCaptioner,
     TaxClassifierVLM,
@@ -74,17 +73,21 @@ async def test_tax_classifier_vlm_error_handling():
 @pytest.mark.asyncio
 async def test_descriptive_captioner_generate_caption():
     """Test caption generation using DescriptiveCaptioner."""
-    # Mock the instructor client response
-    mock_caption_obj = Caption(caption="Detailed mock caption of the organism")
-
-    mock_client = AsyncMock()
-    mock_client.chat.completions.create = AsyncMock(return_value=mock_caption_obj)
+    # Mock the OpenAI response structure for JSON format
+    mock_response = MagicMock()
+    mock_choice = MagicMock()
+    mock_message = MagicMock()
+    mock_message.content = json.dumps(
+        {"caption": "Detailed mock caption of the organism"}
+    )
+    mock_choice.message = mock_message
+    mock_response.choices = [mock_choice]
 
     mock_cap = AsyncMock()
+    mock_cap.chat.completions.create.return_value = mock_response
 
-    with patch("instructor.from_openai", return_value=mock_client):
-        model = DescriptiveCaptioner(cap=mock_cap, model="gpt-4o")
-        result = await model.generate_caption("mock_image_b64")
+    model = DescriptiveCaptioner(cap=mock_cap, model="gpt-4o")
+    result = await model.generate_caption("mock_image_b64")
 
     assert result == "Detailed mock caption of the organism"
 
@@ -92,14 +95,11 @@ async def test_descriptive_captioner_generate_caption():
 @pytest.mark.asyncio
 async def test_descriptive_captioner_error_handling():
     """Test error handling in caption generation."""
-    mock_client = AsyncMock()
-    mock_client.chat.completions.create.side_effect = Exception("API Error")
-
     mock_cap = AsyncMock()
+    mock_cap.chat.completions.create.side_effect = Exception("API Error")
 
-    with patch("instructor.from_openai", return_value=mock_client):
-        model = DescriptiveCaptioner(cap=mock_cap, model="gpt-4o")
-        result = await model.generate_caption("mock_image_b64")
+    model = DescriptiveCaptioner(cap=mock_cap, model="gpt-4o")
+    result = await model.generate_caption("mock_image_b64")
 
     # Should return empty string on error
     assert result == ""

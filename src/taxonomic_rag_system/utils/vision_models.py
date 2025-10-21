@@ -7,13 +7,11 @@ Generating detailed captions or taxonomic classifications from images.
 Classes:
 --------
 - VLM: A base class for vision-language models.
-- InstructorVLModel: A base class for VLMs with instructor integration.
 - TaxClassifierVLM: A model generating taxonomic classifications of organisms.
 - DescriptiveCaptioner: A model generating detailed captions for images of organisms.
 
 Dependencies:
 -------------
-- instructor: For integrating instructor-based models, used in captioning.
 - openai.AsyncOpenAI: For interacting with OpenAI's API.
 - taxonomic_rag_system.utils.out_models: For data models like Caption and Tax.
 
@@ -33,10 +31,9 @@ detailed caption generation functionalities depending on the model used.
 import json
 import logging
 import os
-from typing import Any
 
-import instructor
-from openai import AsyncOpenAI
+import backoff
+from openai import AsyncOpenAI, RateLimitError
 
 from taxonomic_rag_system.utils.helpers import load_api_keys
 
@@ -46,6 +43,8 @@ from taxonomic_rag_system.utils.out_models import Caption, Tax
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
+
+TOKEN_PADDING_LENGTH = 256
 
 
 class VLM:
@@ -59,30 +58,10 @@ class VLM:
         temp: The temperature setting for generation.
     """
 
-    def __init__(self, cap: Any, model: str, temp: float) -> None:
+    def __init__(self, cap: AsyncOpenAI, model: str, temp: float) -> None:
         self.cap = cap
         self.model = model
         self.temp = temp
-
-
-class InstructorVLModel(VLM):
-    """
-    A base class for vision-language models with instructor.
-
-    Adds the instructor 'client' attribute.
-
-    Attributes
-    ----------
-        cap: The openai model instance.
-        client: The instructor client wrapping the cap instance.
-        model: The model name to be used for caption generation.
-        temp: The temperature setting for generation randomness.
-    """
-
-    def __init__(self, cap: Any, model: str, temp: float) -> None:
-        super().__init__(cap, model, temp)
-        load_api_keys()
-        self.client = instructor.from_openai(self.cap)
 
 
 class TaxClassifierVLM(VLM):
@@ -103,10 +82,16 @@ class TaxClassifierVLM(VLM):
 
     Methods
     -------
-        generate_caption(image_b64): Generates a taxonomic classification for the image.
+    generate_classification(image_b64: str) -> dict[str, str]
+        Generate a taxonomic classification for the primary organism in the image.
+    generate_taxonomy(image_b64: str) -> dict[str, str]
+        Generate a taxonomic classification for the primary organism in the image.
+        (Deprecated, use generate_classification instead)
     """
 
-    def __init__(self, cap: Any = None, model: str = "", temp: float = 0) -> None:
+    def __init__(
+        self, cap: AsyncOpenAI | None = None, model: str = "", temp: float = 0
+    ) -> None:
         load_api_keys()
         if cap is None:
             cap = AsyncOpenAI(
@@ -141,10 +126,29 @@ class TaxClassifierVLM(VLM):
             }
             }
             """
-            + "..." * 256
+            + "..." * TOKEN_PADDING_LENGTH
         )
 
     async def generate_taxonomy(self, image_b64: str) -> dict[str, str]:
+        """
+        Generate a taxonomic classification for the primary organism in the image.
+
+        *****DEPRECATED*****
+        Use generate_classification() instead.
+
+        Args:
+            image_b64 (str): Base64 encoded image data.
+
+        Returns
+        -------
+            dict[str, str]: A dictionary representing the taxonomic classification.
+        """
+        print(
+            "generate_taxonomy() has been deprecated, use generate_classification() instead."
+        )
+        return await self.generate_classification(image_b64)
+
+    async def generate_classification(self, image_b64: str) -> dict[str, str]:
         """
         Generate a taxonomic classification for the primary organism in the image.
 
@@ -169,6 +173,11 @@ class TaxClassifierVLM(VLM):
                 "Species": "N/A",
             }
 
+    @backoff.on_exception(
+        backoff.expo,
+        RateLimitError,
+        max_tries=3,
+    )
     async def _taxonomist(self, image_b64: str) -> dict[str, str]:
         """
         Parse base64 image to taxonomic classification.
@@ -213,6 +222,7 @@ class TaxClassifierVLM(VLM):
 
         # Extract the JSON string
         json_content = raw_resp.choices[0].message.content
+        assert isinstance(json_content, str)
 
         # Parse the JSON string to a Python dictionary
         parsed_data = json.loads(json_content)
@@ -223,7 +233,7 @@ class TaxClassifierVLM(VLM):
         return {key: val for key, val in tax.classification.items() if key != "Domain"}
 
 
-class DescriptiveCaptioner(InstructorVLModel):
+class DescriptiveCaptioner(VLM):
     """
     A model for generating detailed captions for images of organisms.
 
@@ -241,15 +251,16 @@ class DescriptiveCaptioner(InstructorVLModel):
 
     def __init__(
         self,
-        cap: Any,
+        cap: AsyncOpenAI | None,
         model: str,
         temp: float = 0,
     ) -> None:
+        load_api_keys()
         if cap is None:
             cap = AsyncOpenAI()
         super().__init__(cap, model, temp)
         self.system_prompt = (
-            """
+            f"""
         You are an expert AI vision assistant to a taxonomist that describes animals in images.
 
         Your task is to describe in extensive detail all the physical features (body and head shape, appendages, colour pattern, shape, texture, etc) of any organism(s) observable in the image.
@@ -270,8 +281,12 @@ class DescriptiveCaptioner(InstructorVLModel):
 
         An example of the type of caption you should produce is:
             Insecta with 4 visible jointed legs, partially translucent wings and compound eyes. There is a three-part body with a head, thorax and abdomen. An anterior lateral view of an adult fly with an abdomen that is mostly black and has a black tail-like taper. The wings have streaks of white as does the thorax and are black elsewhere. The prescutum and scutum are brown and in addition to the head, have small shiny hairs. The wings attach at the middle of the thorax, as do the legs. The legs have an initial black segment but are mostly coppery-brown and terminate into a triangular base. The wings are not as long as the length of the body and lay relatively flat at an angle away from the body with 2 segmented translucent halteres. The head is copper, orange and brown with white bordering. The head is visibly segmented from the thorax but the thorax and abdomen appear continuous and not visibly segmented. One brownish-orange eye with a white border is fully visible and the other eye is partially visible. There are two coppery kidney-shaped mouth parts protruding from the lower front of the head. A single shiny antennae is visible. The fly is standing on a green leaf that has pointed edges.
+
+        <format_instructions>
+        {Caption.model_json_schema()}
+        </format_instructions>
         """
-            + "..." * 256
+            + "..." * TOKEN_PADDING_LENGTH
         )
 
     async def generate_caption(self, image_b64: str) -> str:
@@ -291,6 +306,11 @@ class DescriptiveCaptioner(InstructorVLModel):
             print(f"Error during caption generation: {e}")
             return ""
 
+    @backoff.on_exception(
+        backoff.expo,
+        RateLimitError,
+        max_tries=3,
+    )
     async def _caption(self, image_b64: str) -> str:
         """
         Process image with VLM to generate captions.
@@ -302,7 +322,7 @@ class DescriptiveCaptioner(InstructorVLModel):
         -------
             A string caption containing the detailed description of image features.
         """
-        raw_resp = await self.client.chat.completions.create(
+        raw_resp = await self.cap.chat.completions.create(
             model=self.model,
             temperature=self.temp,
             messages=[
@@ -324,7 +344,20 @@ class DescriptiveCaptioner(InstructorVLModel):
                     ],
                 },
             ],
-            response_model=Caption,
+            response_format={"type": "json_object"},
         )
-        assert isinstance(raw_resp, Caption)
-        return raw_resp.caption
+
+        # Log the raw response for inspection
+        logging.debug(f"Raw response: {raw_resp}")
+
+        # Extract the JSON string
+        json_content = raw_resp.choices[0].message.content
+        assert isinstance(json_content, str)
+
+        # Parse the JSON string to a Python dictionary
+        parsed_data = json.loads(json_content)
+
+        # Manually parse the response to a Caption object
+        cap = Caption.model_validate(parsed_data)
+        assert isinstance(cap, Caption)
+        return cap.caption

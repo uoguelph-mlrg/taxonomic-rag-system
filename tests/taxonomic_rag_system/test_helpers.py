@@ -78,21 +78,29 @@ def test_load_api_keys_missing_openai():
 
 def test_write_overall_metrics(tmp_path):
     """Test writing metrics to CSV."""
-    test_data = {
-        "Kingdom": {"accuracy": 0.95, "f1": 0.93},
-        "Phylum": {"accuracy": 0.87, "f1": 0.85},
+    rank_metrics = {
+        "Kingdom": {"accuracy": 0.95, "f1": 0.93, "count": 10},
+        "Phylum": {"accuracy": 0.87, "f1": 0.85, "count": 8},
+    }
+    overall_metrics = {
+        "hp": 0.82,
+        "hr": 0.79,
+        "hf": 0.80,
     }
     # Create a temporary file for writing CSV
     csv_filename = tmp_path / "test_metrics.csv"
 
-    write_overall_metrics(str(csv_filename), test_data)
+    write_overall_metrics(str(csv_filename), rank_metrics, overall_metrics)
 
     # Verify file contents
     with open(csv_filename, "r") as f:
         content = f.read()
-        assert "Rank,Accuracy,F1" in content
-        assert "Kingdom,0.95,0.93" in content
-        assert "Phylum,0.87,0.85" in content
+        assert "Rank,Accuracy,F1,Attempts" in content
+        assert "Kingdom,0.9500,0.9300,10" in content
+        assert "Phylum,0.8700,0.8500,8" in content
+        assert "Hierarchical Precision (hp),0.82" in content
+        assert "Hierarchical Recall (hr),0.79" in content
+        assert "Hierarchical F1 (hf),0.8" in content
 
 
 def test_extract_tax_metrics():
@@ -108,14 +116,19 @@ def test_extract_tax_metrics():
         },
     ]
 
-    class_report, guess_classes = extract_tax_metrics(result_obj, verbose=False)
+    rank_metrics, overall_metrics, guess_classes = extract_tax_metrics(
+        result_obj, verbose=False
+    )
 
-    assert "Kingdom" in class_report
-    assert "Phylum" in class_report
+    assert "Kingdom" in rank_metrics
+    assert "Phylum" in rank_metrics
     assert len(guess_classes) == 2
     assert guess_classes[0]["Kingdom"] == "Animalia"
-    assert class_report["Kingdom"]["Count"] == 2.0
-    assert class_report["Kingdom"]["accuracy"] == 1.0
+    assert rank_metrics["Kingdom"]["count"] == 2.0
+    assert rank_metrics["Kingdom"]["accuracy"] == 1.0
+    assert "hp" in overall_metrics
+    assert "hr" in overall_metrics
+    assert "hf" in overall_metrics
 
 
 def test_extract_tax_metrics_rs():
@@ -128,12 +141,17 @@ def test_extract_tax_metrics_rs():
         }
     ]
 
-    class_report, guess_classes = extract_tax_metrics_rs(result_obj, verbose=False)
+    rank_metrics, overall_metrics, guess_classes = extract_tax_metrics_rs(
+        result_obj, verbose=False
+    )
 
     assert len(guess_classes) == 1
     assert guess_classes[0]["RSID"] == "RS001"
     assert guess_classes[0]["Kingdom"] == "Animalia"
-    assert class_report["Kingdom"]["Count"] == 1.0
+    assert rank_metrics["Kingdom"]["count"] == 1.0
+    assert "hp" in overall_metrics
+    assert "hr" in overall_metrics
+    assert "hf" in overall_metrics
 
 
 def test_write_preds_to_csv(tmp_path):
@@ -312,10 +330,15 @@ def test_classify_report():
         {"Kingdom": "Animalia", "Phylum": "Arthropoda"},
         {"Kingdom": "Animalia", "Phylum": "Mollusca"},
     ]
-    report = classify_report(true_dicts, pred_dicts)
-    assert "Count" in report["Kingdom"]
-    assert "accuracy" in report["Kingdom"]
-    assert report["Kingdom"]["Count"] == 2.0
+    rank_metrics, overall_metrics = classify_report(
+        true_dicts, pred_dicts, verbose=False
+    )
+    assert "count" in rank_metrics["Kingdom"]
+    assert "accuracy" in rank_metrics["Kingdom"]
+    assert rank_metrics["Kingdom"]["count"] == 2.0
+    assert "hp" in overall_metrics
+    assert "hr" in overall_metrics
+    assert "hf" in overall_metrics
 
 
 def test_custom_collate_fn():

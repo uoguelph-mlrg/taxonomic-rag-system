@@ -102,7 +102,9 @@ async def main() -> None:
         interval=interval, verbose=2
     )
     # 3. Extract Results
-    overalls, preds = extract_tax_metrics(rarespp_predictions, verbose=True)
+    rank_metrics, overall_metrics, preds = extract_tax_metrics(
+        rarespp_predictions, verbose=True
+    )
 
     if write:
         # Create output directory if it doesn't exist
@@ -120,7 +122,7 @@ async def main() -> None:
             + f"RS_naiveVLM_gpt_predictions_{current_date}_{current_time}.csv"
         )
         write_preds_to_csv(preds, predictions_csv_name)
-        write_overall_metrics(final_metrics_csv_name, overalls)
+        write_overall_metrics(final_metrics_csv_name, rank_metrics, overall_metrics)
 
 
 if __name__ == "__main__":

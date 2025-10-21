@@ -5,7 +5,7 @@
 [![code checks](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/code_checks.yml/badge.svg)](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/code_checks.yml)
 [![integration tests](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/integration_tests.yml/badge.svg)](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/integration_tests.yml)
 [![docs](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/docs.yml/badge.svg)](https://github.com/uoguelph-mlrg/taxonomic-rag-system/actions/workflows/docs.yml)
-![GitHub License](https://img.shields.io/github/license/uoguelph-mlrg/taxonomic-rag-system)
+![GitHub License][![GitHub License](https://img.shields.io/badge/license-MIT-blue)](https://github.com/uoguelph-mlrg/taxonomic-rag-system/blob/main/LICENSE)
 
 A system for taxonomic classification and biodiversity analysis using Retrieval-Augmented Generation (RAG) and Vision-Language Models (VLMs). This repository contains the implementation of experiments presented in [Taxonomic Reasoning of Rare Arthropods: Combinging Dense Image Captioning with RAG for Interpretable Classification](https://arxiv.org/abs/2503.10886), part of the Canadian AI 2025 Conference proceedings.
 
@@ -29,6 +29,8 @@ run:
 uv sync --dev
 source .venv/bin/activate
 ```
+
+**Note:** PyTorch 2.6.0 is a dependency and does not provide wheels for Intel-based Macs (x86_64).
 
 ### Prerequisites
 
@@ -108,4 +110,6 @@ To run experiments on the rare species dataset, use the following scripts:
 
 The results of the experiments, including taxonomic classifications and evaluation metrics, are saved as CSV files in the specified output directory:
 - Itemized classification predictions: `RS_<model>_predictions_<date>_<time>.csv`
-- Rank-wise classification metrics: `RS_<model>_tax_metrics_<date>_<time>.csv`
+- Classification metrics: `RS_<model>_tax_metrics_<date>_<time>.csv`
+  - Contains rank-level metrics (accuracy, F1, attempts) for each taxonomic rank
+  - Includes hierarchical metrics (hp, hr, hf) in a separate section

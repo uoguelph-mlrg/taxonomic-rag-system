@@ -37,12 +37,13 @@ python chunk_vectorize.py \
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import re
 from typing import Iterator, Optional, Tuple
 
-import instructor
+import backoff
 import torch
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import DirectoryLoader
@@ -50,6 +51,7 @@ from langchain_community.vectorstores import Chroma
 from langchain_core.document_loaders import BaseLoader
 from langchain_core.documents import Document
 from openai import AsyncOpenAI
+from openai.error import APIError, RateLimitError
 
 from taxonomic_rag_system.utils.helpers import load_api_keys
 from taxonomic_rag_system.utils.out_models import Chunk
@@ -74,7 +76,7 @@ def _load_up(path: str) -> list[Document]:
 
 async def contextual_retrieval_load(
     docs: list[Document],
-    client: instructor.AsyncInstructor,
+    client: AsyncOpenAI,
     output_path: str,
     source: str = "",
     write: bool = True,
@@ -291,9 +293,8 @@ def _filter_present(output_path: str) -> list[str]:
     return negate
 
 
-async def contextualize(
-    chunk: str, doc: str, client: instructor.AsyncInstructor
-) -> Chunk:
+@backoff.on_exception(backoff.expo, (RateLimitError, APIError), max_tries=3)
+async def contextualize(chunk: str, doc: str, client: AsyncOpenAI) -> Chunk:
     """
     Asynchronously contextualize a chunk of text within context of larger doc.
 
@@ -302,7 +303,7 @@ async def contextualize(
     Args:
         chunk (str): The chunk of text to be analyzed and contextualized.
         doc (str): The larger document from which the chunk originates.
-        client (AsyncInstructor): The instructor async client for the LLM.
+        client (AsyncOpenAI): The async client for the LLM.
 
     Returns
     -------
@@ -368,10 +369,23 @@ async def contextualize(
                 ],
             },
         ],
-        response_model=Chunk,
+        response_format={"type": "json_object"},
     )
-    assert isinstance(resp, Chunk)
-    return resp
+
+    # Log the raw response for inspection
+    logging.debug(f"Raw response: {resp}")
+
+    # Extract the JSON string
+    json_content = resp.choices[0].message.content
+    assert isinstance(json_content, str)
+
+    # Parse the JSON string to a Python dictionary
+    parsed_data = json.loads(json_content)
+
+    # Manually parse the response to a Chunk object
+    structured_chunk = Chunk.model_validate(parsed_data)
+    assert isinstance(structured_chunk, Chunk)
+    return structured_chunk
 
 
 def _filtered_load_up(path: str, output_path: Optional[str] = None) -> list[Document]:
@@ -519,13 +533,12 @@ async def main() -> None:
 
     load_api_keys()
     llm = AsyncOpenAI()
-    client = instructor.from_openai(llm)
 
     documents = _filtered_load_up(path=source, output_path=output_path)
     if contextualize:
         use, notuse = await contextual_retrieval_load(
             documents,
-            client,
+            llm,
             source=source,
             output_path=output_path,
             write=write,
