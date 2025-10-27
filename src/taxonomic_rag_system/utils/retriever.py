@@ -362,6 +362,15 @@ class RAGChainBuilder:
             if full_text and rebuilt_text and rebuilt_text != full_text:
                 warnings.append("rebuilt_text_mismatch")
 
+            # Quality stats: missing token logprobs ratio
+            total_tokens = len(token_records)
+            missing_token_count = 0
+            for r in token_records:
+                lpv_r = r.get("lp")
+                if lpv_r is None or lpv_r == -9999.0:
+                    missing_token_count += 1
+            missing_token_ratio = (missing_token_count / total_tokens) if total_tokens else 0.0
+
             # Section mapping helpers
             def _find_json_string_value_span(raw: str, key: str, start_at: int = 0, end_at: int | None = None):
                 end_lim = len(raw) if end_at is None else end_at
@@ -477,6 +486,11 @@ class RAGChainBuilder:
                 "gen_params": {"logprobs": True, "temperature": 1, "top_p": 1, "seed": DEFAULT_LLM_SEED},
                 "tokens": token_records,
                 "sections": sections,
+                "quality": {
+                    "missing_token_count (lp=-9999.0)": missing_token_count,
+                    "total_token_count": total_tokens,
+                    "missing_token_ratio": missing_token_ratio,
+                },
                 "warnings": warnings,
             }
 
