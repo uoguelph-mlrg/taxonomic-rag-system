@@ -203,6 +203,7 @@ class RAGChainBuilder:
             temperature=1,
             top_p=1,
             seed=DEFAULT_LLM_SEED,
+            top_logprobs=20,
         )
         # Invoke model to get AIMessage with response metadata (incl. logprobs)
         ai_msg = gen.invoke(input=inp)
@@ -232,6 +233,7 @@ class RAGChainBuilder:
                 temperature=1,
                 top_p=1,
                 seed=DEFAULT_LLM_SEED,
+                top_logprobs=20,
             )
             # Invoke model asynchronously to get AIMessage
             ai_msg = await gen.ainvoke(input=inp)
@@ -317,7 +319,7 @@ class RAGChainBuilder:
             finish_reason = meta.get("finish_reason") or (meta.get("choices", [{}])[0].get("finish_reason") if isinstance(meta.get("choices"), list) and meta.get("choices") else None)
             system_fingerprint = meta.get("system_fingerprint") or None
 
-            # Try to extract tokens from various possible shapes
+            # Try to extract tokens (and top candidates) from various possible shapes
             tokens_src = []
             try:
                 lp = meta.get("logprobs")
@@ -339,6 +341,20 @@ class RAGChainBuilder:
             for i, tk in enumerate(tokens_src):
                 tok = tk.get("token") if isinstance(tk, dict) else None
                 lpv = tk.get("logprob") if isinstance(tk, dict) else None
+                top_list = None
+                try:
+                    raw_top = tk.get("top_logprobs") if isinstance(tk, dict) else None
+                    if isinstance(raw_top, list):
+                        # Normalize to [{"t": string, "lp": float}, ...]
+                        top_list = []
+                        for cand in raw_top:
+                            if isinstance(cand, dict):
+                                ctok = cand.get("token")
+                                clpv = cand.get("logprob")
+                                if ctok is not None and clpv is not None:
+                                    top_list.append({"t": ctok, "lp": clpv})
+                except Exception:
+                    top_list = None
                 if tok is None:
                     continue
                 s_char = char_cursor
@@ -354,6 +370,7 @@ class RAGChainBuilder:
                     "char_e": char_cursor,
                     "byte_s": s_byte,
                     "byte_e": byte_cursor,
+                    "top": top_list,
                 })
 
             # Validate reconstructed text vs full_text (best effort)
@@ -483,7 +500,7 @@ class RAGChainBuilder:
                 "system_fingerprint": system_fingerprint,
                 "response_text": full_text,
                 "response_text_hash": resp_hash,
-                "gen_params": {"logprobs": True, "temperature": 1, "top_p": 1, "seed": DEFAULT_LLM_SEED},
+                "gen_params": {"logprobs": True, "temperature": 1, "top_p": 1, "seed": DEFAULT_LLM_SEED, "top_logprobs": 20},
                 "tokens": token_records,
                 "sections": sections,
                 "quality": {
