@@ -51,6 +51,9 @@ from taxonomic_rag_system.utils.out_models import MultiQuery, TaxBiodiversity
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Fixed seed for LLM requests (reproducibility/audit)
+DEFAULT_LLM_SEED: int = 12345
+
 
 class SafeHuggingFaceEmbeddings(HuggingFaceEmbeddings):
     """
@@ -194,7 +197,13 @@ class RAGChainBuilder:
         prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
         prompt_str = self.prompt.format(**prompt_inputs)
         # Build a generation runnable that requests logprobs and enforces JSON
-        gen = self.prompt | self.llm.bind(logprobs=True, response_format={"type": "json_object"})
+        gen = self.prompt | self.llm.bind(
+            logprobs=True,
+            response_format={"type": "json_object"},
+            temperature=1,
+            top_p=1,
+            seed=DEFAULT_LLM_SEED,
+        )
         # Invoke model to get AIMessage with response metadata (incl. logprobs)
         ai_msg = gen.invoke(input=inp)
         # Parse JSON to pydantic object using the same parser as before
@@ -217,7 +226,13 @@ class RAGChainBuilder:
             prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
             prompt_str = self.prompt.format(**prompt_inputs)
             # Build a generation runnable that requests logprobs and enforces JSON
-            gen = self.prompt | self.llm.bind(logprobs=True, response_format={"type": "json_object"})
+            gen = self.prompt | self.llm.bind(
+                logprobs=True,
+                response_format={"type": "json_object"},
+                temperature=1,
+                top_p=1,
+                seed=DEFAULT_LLM_SEED,
+            )
             # Invoke model asynchronously to get AIMessage
             ai_msg = await gen.ainvoke(input=inp)
             # Parse JSON to pydantic object
@@ -300,6 +315,7 @@ class RAGChainBuilder:
             model_name = meta.get("model_name") or meta.get("model") or ""
             created = meta.get("created") or None
             finish_reason = meta.get("finish_reason") or (meta.get("choices", [{}])[0].get("finish_reason") if isinstance(meta.get("choices"), list) and meta.get("choices") else None)
+            system_fingerprint = meta.get("system_fingerprint") or None
 
             # Try to extract tokens from various possible shapes
             tokens_src = []
@@ -455,9 +471,10 @@ class RAGChainBuilder:
                 "model": model_name,
                 "created": created,
                 "finish_reason": finish_reason,
+                "system_fingerprint": system_fingerprint,
                 "response_text": full_text,
                 "response_text_hash": resp_hash,
-                "gen_params": {"logprobs": True},
+                "gen_params": {"logprobs": True, "temperature": 1, "top_p": 1, "seed": DEFAULT_LLM_SEED},
                 "tokens": token_records,
                 "sections": sections,
                 "warnings": warnings,
