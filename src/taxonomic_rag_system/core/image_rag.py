@@ -111,6 +111,7 @@ class ImageRAGModel:
         cap: Optional[AsyncOpenAI] = None,
         model: str = "gpt-4o",
         prompt_log_path: Optional[str] = None,
+        logprobs_log_path: Optional[str] = None,
     ):
         load_api_keys()
         if cap is None:
@@ -129,6 +130,7 @@ class ImageRAGModel:
             rerank=rerank,
             multiquery=multiquery,
             log_path=prompt_log_path,
+            logprobs_path=logprobs_log_path,
         )
 
     def get_device(self) -> torch.device:

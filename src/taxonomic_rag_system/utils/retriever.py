@@ -24,6 +24,7 @@ Dependencies:
 """
 
 import logging
+import hashlib
 import traceback
 from typing import Any, Union, overload
 
@@ -105,7 +106,7 @@ class RAGChainBuilder:
     and taxonomic classification generation based on a caption and additional context.
     """
 
-    def __init__(self, retriever: Any, log_path: str | None = None) -> None:
+    def __init__(self, retriever: Any, log_path: str | None = None, logprobs_path: str | None = None) -> None:
         """
         Initialize RAGChainBuilder with a retriever.
 
@@ -147,6 +148,8 @@ class RAGChainBuilder:
         self.rag_chain = self._build_chain(retriever)
         # Optional path to save prompt/response pairs in JSONL format; disabled by default
         self._log_path: str | None = str(log_path) if log_path else None
+        # Optional path to save token-level logprobs JSONL aligned by rsid
+        self._logprobs_path: str | None = str(logprobs_path) if logprobs_path else None
         # Store retriever for possible prompt reconstruction/logging
         self._retriever = retriever
     
@@ -190,10 +193,16 @@ class RAGChainBuilder:
         # Use only required keys for formatting to avoid extra keys issues
         prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
         prompt_str = self.prompt.format(**prompt_inputs)
-        result = self.rag_chain.invoke(input=inp)
+        # Build a generation runnable that requests logprobs and enforces JSON
+        gen = self.prompt | self.llm.bind(logprobs=True, response_format={"type": "json_object"})
+        # Invoke model to get AIMessage with response metadata (incl. logprobs)
+        ai_msg = gen.invoke(input=inp)
+        # Parse JSON to pydantic object using the same parser as before
+        result = self.output_parser.invoke(ai_msg.content)
         # Log prompt/response pair with optional RSID
         self._log_pair(prompt_str, result, rsid=inp.get("RSID"))
-        # Return parsed result
+        # Also write logprobs JSONL if configured
+        self._log_logprobs(prompt_str, ai_msg, rsid=inp.get("RSID"))
         return result
 
     async def ainvoke(self, inp: dict[str, Any]) -> TaxBiodiversity:
@@ -207,8 +216,16 @@ class RAGChainBuilder:
             # Prompt/Response logging parity with sync invoke
             prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
             prompt_str = self.prompt.format(**prompt_inputs)
-            result = await self.rag_chain.ainvoke(input=inp)
+            # Build a generation runnable that requests logprobs and enforces JSON
+            gen = self.prompt | self.llm.bind(logprobs=True, response_format={"type": "json_object"})
+            # Invoke model asynchronously to get AIMessage
+            ai_msg = await gen.ainvoke(input=inp)
+            # Parse JSON to pydantic object
+            result = self.output_parser.invoke(ai_msg.content)
+            # Log prompt/response pair
             self._log_pair(prompt_str, result, rsid=inp.get("RSID"))
+            # Also write logprobs JSONL if configured
+            self._log_logprobs(prompt_str, ai_msg, rsid=inp.get("RSID"))
             return result
         except Exception as e:
             logger.error("Error in RAGChainBuilder.ainvoke:")
@@ -261,6 +278,196 @@ class RAGChainBuilder:
             # Do not crash the main pipeline for logging errors; just warn.
             logger.warning(f"Failed to log prompt/response pair: {log_err}")
 
+    def _log_logprobs(self, prompt: str, ai_message: Any, rsid: str | None = None) -> None:
+        """Append a token-level logprobs record to the configured JSONL file (if any).
+
+        The record includes:
+          - rsid, model, created, finish_reason
+          - response_text and its sha256 hash
+          - tokens with per-token logprob and char/byte offsets
+          - section mappings: top-level fields and classification ranks
+        """
+        if not getattr(self, "_logprobs_path", None):
+            return  # Logging disabled
+
+        try:
+            # Ensure parent directory exists
+            Path(self._logprobs_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+
+            # Extract metadata and tokens from AIMessage
+            full_text = getattr(ai_message, "content", "") or ""
+            meta = getattr(ai_message, "response_metadata", {}) or {}
+            model_name = meta.get("model_name") or meta.get("model") or ""
+            created = meta.get("created") or None
+            finish_reason = meta.get("finish_reason") or (meta.get("choices", [{}])[0].get("finish_reason") if isinstance(meta.get("choices"), list) and meta.get("choices") else None)
+
+            # Try to extract tokens from various possible shapes
+            tokens_src = []
+            try:
+                lp = meta.get("logprobs")
+                if isinstance(lp, dict) and isinstance(lp.get("content"), list):
+                    tokens_src = lp["content"]
+                elif isinstance(meta.get("choices"), list):
+                    ch0 = meta["choices"][0] if meta["choices"] else {}
+                    lp2 = ch0.get("logprobs") if isinstance(ch0, dict) else None
+                    if isinstance(lp2, dict) and isinstance(lp2.get("content"), list):
+                        tokens_src = lp2["content"]
+            except Exception:
+                tokens_src = []
+
+            # Build per-token records and compute offsets
+            token_records: list[dict[str, object]] = []
+            char_cursor = 0
+            byte_cursor = 0
+            rebuilt = []
+            for i, tk in enumerate(tokens_src):
+                tok = tk.get("token") if isinstance(tk, dict) else None
+                lpv = tk.get("logprob") if isinstance(tk, dict) else None
+                if tok is None:
+                    continue
+                s_char = char_cursor
+                s_byte = byte_cursor
+                rebuilt.append(tok)
+                char_cursor += len(tok)
+                byte_cursor += len(tok.encode("utf-8"))
+                token_records.append({
+                    "idx": i,
+                    "t": tok,
+                    "lp": lpv,
+                    "char_s": s_char,
+                    "char_e": char_cursor,
+                    "byte_s": s_byte,
+                    "byte_e": byte_cursor,
+                })
+
+            # Validate reconstructed text vs full_text (best effort)
+            rebuilt_text = "".join(rebuilt)
+            warnings: list[str] = []
+            if full_text and rebuilt_text and rebuilt_text != full_text:
+                warnings.append("rebuilt_text_mismatch")
+
+            # Section mapping helpers
+            def _find_json_string_value_span(raw: str, key: str, start_at: int = 0, end_at: int | None = None):
+                end_lim = len(raw) if end_at is None else end_at
+                kq = f'"{key}"'
+                i = raw.find(kq, start_at, end_lim)
+                if i == -1:
+                    return None
+                j = raw.find(":", i + len(kq), end_lim)
+                if j == -1:
+                    return None
+                j += 1
+                while j < end_lim and raw[j] in " \t\r\n":
+                    j += 1
+                if j >= end_lim or raw[j] != '"':
+                    return None
+                val_start = j + 1
+                p = val_start
+                while p < end_lim:
+                    c = raw[p]
+                    if c == "\\":
+                        p += 2
+                        continue
+                    if c == '"':
+                        return (val_start, p)
+                    p += 1
+                return None
+
+            def _find_json_object_span(raw: str, key: str, start_at: int = 0):
+                kq = f'"{key}"'
+                i = raw.find(kq, start_at)
+                if i == -1:
+                    return None
+                j = raw.find(":", i + len(kq))
+                if j == -1:
+                    return None
+                j += 1
+                while j < len(raw) and raw[j] in " \t\r\n":
+                    j += 1
+                if j >= len(raw) or raw[j] != '{':
+                    return None
+                # Brace matching with string awareness
+                depth = 0
+                in_str = False
+                p = j
+                while p < len(raw):
+                    ch = raw[p]
+                    if in_str:
+                        if ch == "\\":
+                            p += 2
+                            continue
+                        if ch == '"':
+                            in_str = False
+                        p += 1
+                        continue
+                    if ch == '"':
+                        in_str = True
+                        p += 1
+                        continue
+                    if ch == '{':
+                        depth += 1
+                    elif ch == '}':
+                        depth -= 1
+                        if depth == 0:
+                            return (j, p + 1)
+                    p += 1
+                return None
+
+            def _token_range_for_char_range(recs: list[dict[str, object]], cr: tuple[int, int] | None):
+                if not cr:
+                    return None
+                s_char, e_char = cr
+                idxs: list[int] = []
+                for r in recs:
+                    rs = int(r["char_s"])  # type: ignore[arg-type]
+                    re = int(r["char_e"])  # type: ignore[arg-type]
+                    if re > s_char and rs < e_char:
+                        idxs.append(int(r["idx"]))  # type: ignore[arg-type]
+                if not idxs:
+                    return None
+                return (min(idxs), max(idxs) + 1)
+
+            sections: dict[str, object] = {}
+            # Top-level string fields
+            for key in ("ancestral", "specific", "commentary", "bio_knowledge"):
+                cr = _find_json_string_value_span(full_text, key)
+                tr = _token_range_for_char_range(token_records, cr) if token_records else None
+                if cr is not None:
+                    sections[key] = {"char_range": list(cr), "token_range": list(tr) if tr else None}
+
+            # classification object and its ranks
+            class_obj_span = _find_json_object_span(full_text, "classification")
+            class_map: dict[str, object] = {}
+            if class_obj_span is not None:
+                c_s, c_e = class_obj_span
+                for rk in ("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"):
+                    scr = _find_json_string_value_span(full_text, rk, start_at=c_s, end_at=c_e)
+                    tr = _token_range_for_char_range(token_records, scr) if token_records else None
+                    if scr is not None:
+                        class_map[rk] = {"char_range": list(scr), "token_range": list(tr) if tr else None}
+                sections["classification"] = class_map
+
+            # Build record
+            resp_hash = "sha256:" + hashlib.sha256(full_text.encode("utf-8")).hexdigest()
+            record = {
+                "schema_version": "logprob_v1",
+                "rsid": rsid,
+                "model": model_name,
+                "created": created,
+                "finish_reason": finish_reason,
+                "response_text": full_text,
+                "response_text_hash": resp_hash,
+                "gen_params": {"logprobs": True},
+                "tokens": token_records,
+                "sections": sections,
+                "warnings": warnings,
+            }
+
+            with open(self._logprobs_path, "a", encoding="utf-8") as fp:
+                fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception as log_err:
+            logger.warning(f"Failed to log logprobs: {log_err}")
+
 class BaseRetriever:
     """Base class for document retriever against a Chroma collection."""
 
@@ -299,6 +506,7 @@ class WikiStellaRAGModel(BaseRetriever):
         rerank: bool = False,
         multiquery: bool = False,
         log_path: str | None = None,
+        logprobs_path: str | None = None,
     ) -> None:
         """
         Initialize WikiStellaRAGModel with config options for multiquery and reranker.
@@ -333,7 +541,7 @@ class WikiStellaRAGModel(BaseRetriever):
             self._add_multiquery()
         if rerank:
             self._add_reranker()
-        self.model = RAGChainBuilder(self.retriever, log_path=log_path)
+        self.model = RAGChainBuilder(self.retriever, log_path=log_path, logprobs_path=logprobs_path)
 
     def _set_up_retriever(self, vstore_path: str) -> Chroma:
         """

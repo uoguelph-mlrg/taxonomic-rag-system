@@ -126,9 +126,12 @@ async def main() -> None:
     prompt_jsonl_name = str(
         output_path + f"RS_simpRAG_prompt_response_pairs_{current_date}_{current_time}.jsonl"
     )
+    logprobs_jsonl_name = str(
+        output_path + f"RS_simpRAG_logprobs_{current_date}_{current_time}.jsonl"
+    )
 
     # 1. Build Model, 2. RareSpecies Run, 3. Extract Results
-    model = ImageRAGModel(vstore_path=vstore_path, model="gpt-4o", prompt_log_path=prompt_jsonl_name if write else None)
+    model = ImageRAGModel(vstore_path=vstore_path, model="gpt-4o", prompt_log_path=prompt_jsonl_name if write else None, logprobs_log_path=logprobs_jsonl_name if write else None)
     print(f"Device: {model.get_device()}")
     rarespp_predictions = await model.rarespecies_dataset_run(
         interval=interval, verbose=2
