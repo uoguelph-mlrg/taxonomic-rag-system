@@ -33,7 +33,7 @@ class TaxBiodiversity(BaseModel):
     """
 
     classification: dict[str, str] = Field(
-        description="""Predicted taxonomic classification dictionary, where keys of dictionary are taxonomic ranks, ['Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'], and values of dictionary are predicted classification for a given taxonomic rank."""
+        description="""Predicted taxonomic classification dictionary, where keys of dictionary are taxonomic ranks, ['Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'], and values of dictionary are predicted classification for a given taxonomic rank. Start with all dictionary values as 'N/A' and only change them to a particular group if there is good evidence from context and query caption matching to do so."""
     )
     ancestral: str = Field(
         description="Describe traits that are seen in the image caption of the new organism and also seen in describing the organisms in the context."
@@ -57,7 +57,7 @@ class Tax(BaseModel):
     """
 
     classification: dict[str, str] = Field(
-        description="""Predicted taxonomic classification dictionary, where keys of dictionary are taxonomic ranks, ['Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'], and values of dictionary are predicted classification for a given taxonomic rank.""",
+        description="""Predicted taxonomic classification dictionary, where keys of dictionary are taxonomic ranks, ['Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'], and values of dictionary are predicted classification for a given taxonomic rank. Start with all dictionary values as 'N/A' and only change them to a particular group if there is good evidence to do so.""",
         examples=[
             {
                 "Kingdom": "Animalia",
