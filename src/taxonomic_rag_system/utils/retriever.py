@@ -131,8 +131,7 @@ class RAGChainBuilder:
         4. Commentary on your choice, including discussion of confidence, what new information about the new organism would help support the taxonomic classification and what new information would dispute the taxonomic classification.
         5. A few paragraphs describing the features present (from the caption) and how they could relate to the biodiversity knowledge that is relevant to the taxa chosen.
 
-        Do not include a taxonomic classification for a certain rank unless you are confident from the caption (and/or context) about the classification.
-
+        Provide your best-guess at every rank using scientific names and maintain lineage consistency (ancestors must be compatible with descendants). Prefer filling each rank over using 'N/A'; only output 'N/A' when there is truly no plausible guess from the caption and/or context. If uncertain, still provide the most probable taxon and explain uncertainty in commentary.
         """
             + "..." * 256
             + """
