@@ -85,14 +85,27 @@ def load_api_keys() -> None:
     Read API keys from files in home dir - `~/.openai.key`,
     `~/.openrouter.key` and `~/.cohere.key`.
     """
-    try:
-        with open(Path.home() / ".openai.key", "r") as f:
-            os.environ["OPENAI_API_KEY"] = f.read().strip()
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            "Could not find OpenAI API key at ~/.openai.key. "
-            "This key is required for the model to function."
-        ) from None
+    # Prefer existing environment variables if already set
+    if not os.environ.get("OPENAI_API_KEY"):
+        try:
+            with open(Path.home() / ".openai.key", "r") as f:
+                os.environ["OPENAI_API_KEY"] = f.read().strip()
+        except FileNotFoundError:
+            # Do not hard-fail if NVIDIA NIM is used; warn instead
+            if not os.environ.get("NVIDIA_API_KEY"):
+                print(
+                    "Warning: Could not find OpenAI API key at ~/.openai.key and OPENAI_API_KEY is unset. "
+                    "If you are using NVIDIA NIM instead, set NVIDIA_API_KEY or create ~/.nvidia.key."
+                )
+
+    # Load NVIDIA NIM key if present (optional; used when targeting NIM endpoints)
+    if not os.environ.get("NVIDIA_API_KEY"):
+        try:
+            with open(Path.home() / ".nvidia.key", "r") as f:
+                os.environ["NVIDIA_API_KEY"] = f.read().strip()
+        except FileNotFoundError:
+            # Optional, only warn
+            pass
 
     try:
         with open(Path.home() / ".openrouter.key", "r") as f:

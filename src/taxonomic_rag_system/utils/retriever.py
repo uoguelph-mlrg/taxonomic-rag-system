@@ -24,6 +24,7 @@ Dependencies:
 """
 
 import logging
+import os
 import hashlib
 import traceback
 from typing import Any, Union, overload
@@ -109,14 +110,30 @@ class RAGChainBuilder:
     and taxonomic classification generation based on a caption and additional context.
     """
 
-    def __init__(self, retriever: Any, log_path: str | None = None, logprobs_path: str | None = None) -> None:
+    def __init__(
+        self,
+        retriever: Any,
+        log_path: str | None = None,
+        logprobs_path: str | None = None,
+        llm_model: str = "gpt-4o",
+        llm_base_url: str | None = None,
+        llm_api_key: str | None = None,
+    ) -> None:
         """
         Initialize RAGChainBuilder with a retriever.
 
         :param retriever: The document retriever to use.
         :param log_path: Optional path to save prompt/response pairs in JSONL format.
         """
-        self.llm = ChatOpenAI(model="gpt-4o")
+        # Configure LLM (NVIDIA NIM via OpenAI-compatible endpoint when base_url/api_key provided)
+        if llm_base_url or llm_api_key:
+            self.llm = ChatOpenAI(
+                model=llm_model,
+                base_url=llm_base_url,
+                api_key=llm_api_key,
+            )
+        else:
+            self.llm = ChatOpenAI(model=llm_model)
         self.output_parser = PydanticOutputParser(pydantic_object=TaxBiodiversity)
         self.system_template = (
             """
@@ -196,16 +213,26 @@ class RAGChainBuilder:
         prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
         prompt_str = self.prompt.format(**prompt_inputs)
         # Build a generation runnable that requests logprobs and enforces JSON
-        gen = self.prompt | self.llm.bind(
-            logprobs=True,
-            response_format={"type": "json_object"},
-            temperature=1,
-            top_p=1,
-            seed=DEFAULT_LLM_SEED,
-            top_logprobs=20,
-        )
-        # Invoke model to get AIMessage with response metadata (incl. logprobs)
-        ai_msg = gen.invoke(input=inp)
+        try:
+            gen = self.prompt | self.llm.bind(
+                logprobs=True,
+                response_format={"type": "json_object"},
+                temperature=1,
+                top_p=1,
+                seed=DEFAULT_LLM_SEED,
+                top_logprobs=20,
+            )
+            # Invoke model to get AIMessage with response metadata (incl. logprobs)
+            ai_msg = gen.invoke(input=inp)
+        except Exception:
+            # Fallback path for providers without logprobs support
+            gen = self.prompt | self.llm.bind(
+                response_format={"type": "json_object"},
+                temperature=1,
+                top_p=1,
+                seed=DEFAULT_LLM_SEED,
+            )
+            ai_msg = gen.invoke(input=inp)
         # Parse JSON to pydantic object using the same parser as before
         result = self.output_parser.invoke(ai_msg.content)
         # Log prompt/response pair with optional RSID
@@ -226,16 +253,26 @@ class RAGChainBuilder:
             prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
             prompt_str = self.prompt.format(**prompt_inputs)
             # Build a generation runnable that requests logprobs and enforces JSON
-            gen = self.prompt | self.llm.bind(
-                logprobs=True,
-                response_format={"type": "json_object"},
-                temperature=1,
-                top_p=1,
-                seed=DEFAULT_LLM_SEED,
-                top_logprobs=20,
-            )
-            # Invoke model asynchronously to get AIMessage
-            ai_msg = await gen.ainvoke(input=inp)
+            try:
+                gen = self.prompt | self.llm.bind(
+                    logprobs=True,
+                    response_format={"type": "json_object"},
+                    temperature=1,
+                    top_p=1,
+                    seed=DEFAULT_LLM_SEED,
+                    top_logprobs=20,
+                )
+                # Invoke model asynchronously to get AIMessage
+                ai_msg = await gen.ainvoke(input=inp)
+            except Exception:
+                # Fallback path for providers without logprobs support
+                gen = self.prompt | self.llm.bind(
+                    response_format={"type": "json_object"},
+                    temperature=1,
+                    top_p=1,
+                    seed=DEFAULT_LLM_SEED,
+                )
+                ai_msg = await gen.ainvoke(input=inp)
             # Parse JSON to pydantic object
             result = self.output_parser.invoke(ai_msg.content)
             # Log prompt/response pair
@@ -554,6 +591,9 @@ class WikiStellaRAGModel(BaseRetriever):
         multiquery: bool = False,
         log_path: str | None = None,
         logprobs_path: str | None = None,
+        llm_model: str = "gpt-4o",
+        llm_base_url: str | None = None,
+        llm_api_key: str | None = None,
     ) -> None:
         """
         Initialize WikiStellaRAGModel with config options for multiquery and reranker.
@@ -579,6 +619,10 @@ class WikiStellaRAGModel(BaseRetriever):
             k=k,
         )
         load_api_keys()
+        # Persist LLM configuration for both the main chain and utilities (e.g., multiquery)
+        self._llm_model = llm_model
+        self._llm_base_url = llm_base_url
+        self._llm_api_key = llm_api_key
         self.vectorstore = self._set_up_retriever(vstore_path)
         self.base_retriever = self.vectorstore.as_retriever(
             search_type=self.search_type, search_kwargs={"k": self.k}
@@ -588,7 +632,14 @@ class WikiStellaRAGModel(BaseRetriever):
             self._add_multiquery()
         if rerank:
             self._add_reranker()
-        self.model = RAGChainBuilder(self.retriever, log_path=log_path, logprobs_path=logprobs_path)
+        self.model = RAGChainBuilder(
+            self.retriever,
+            log_path=log_path,
+            logprobs_path=logprobs_path,
+            llm_model=self._llm_model,
+            llm_base_url=self._llm_base_url,
+            llm_api_key=self._llm_api_key,
+        )
 
     def _set_up_retriever(self, vstore_path: str) -> Chroma:
         """
@@ -675,12 +726,14 @@ class WikiStellaRAGModel(BaseRetriever):
             partial_variables={"format_instructions": parser.get_format_instructions()},
         )
 
-        generate_queries = (
-            prompt_perspectives
-            | ChatOpenAI(model="gpt-4o-mini")
-            | parser
-            | (lambda x: x.queries)
-        )
+        # Use the configured LLM (e.g., Qwen via NVIDIA NIM) for query generation too
+        gen_llm = ChatOpenAI(
+            model=self._llm_model,
+            base_url=self._llm_base_url,
+            api_key=self._llm_api_key,
+        ) if (self._llm_base_url or self._llm_api_key) else ChatOpenAI(model=self._llm_model)
+
+        generate_queries = (prompt_perspectives | gen_llm | parser | (lambda x: x.queries))
         # Redefine retriever to use union of output from multiple retrievals
         self.retriever = generate_queries | self.retriever.map() | unique_docs
 

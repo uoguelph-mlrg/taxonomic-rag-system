@@ -130,8 +130,15 @@ async def main() -> None:
         output_path + f"RS_simpRAG_logprobs_{current_date}_{current_time}.jsonl"
     )
 
-    # 1. Build Model, 2. RareSpecies Run, 3. Extract Results
-    model = ImageRAGModel(vstore_path=vstore_path, model="gpt-4o", prompt_log_path=prompt_jsonl_name if write else None, logprobs_log_path=logprobs_jsonl_name if write else None)
+    # 1. Build Model (VLM: Llama-3.2-11B-Vision; LLM: Qwen2.5-7B-Instruct via NVIDIA NIM), 2. RareSpecies Run, 3. Extract Results
+    model = ImageRAGModel(
+        vstore_path=vstore_path,
+        vlm_model="meta/llama-3.2-11b-vision-instruct",
+        llm_model="qwen/qwen2.5-7b-instruct",
+        nim_base_url="https://integrate.api.nvidia.com/v1",
+        prompt_log_path=prompt_jsonl_name if write else None,
+        logprobs_log_path=logprobs_jsonl_name if write else None,
+    )
     print(f"Device: {model.get_device()}")
     rarespp_predictions = await model.rarespecies_dataset_run(
         interval=interval, verbose=2
