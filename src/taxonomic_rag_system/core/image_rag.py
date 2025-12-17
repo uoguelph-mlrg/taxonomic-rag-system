@@ -152,10 +152,6 @@ class ImageRAGModel:
             multiquery=multiquery,
             log_path=prompt_log_path,
             logprobs_path=logprobs_log_path,
-            # Use the same model and endpoint for the RAG LLM if NIM is configured
-            llm_model=_llm_model,
-            llm_base_url=(nim_base_url or None),
-            llm_api_key=(nim_api_key or os.environ.get("NVIDIA_API_KEY") if (nim_base_url or nim_api_key) else None),
         )
 
     def get_device(self) -> torch.device:
