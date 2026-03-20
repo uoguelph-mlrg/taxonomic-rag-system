@@ -109,7 +109,15 @@ class RAGChainBuilder:
     and taxonomic classification generation based on a caption and additional context.
     """
 
-    def __init__(self, retriever: Any, log_path: str | None = None, logprobs_path: str | None = None) -> None:
+    def __init__(
+        self,
+        retriever: Any,
+        log_path: str | None = None,
+        logprobs_path: str | None = None,
+        multisample_prompt_path: str | None = None,
+        multisample_samples_path: str | None = None,
+        multisample_logprobs_path: str | None = None,
+    ) -> None:
         """
         Initialize RAGChainBuilder with a retriever.
 
@@ -152,9 +160,19 @@ class RAGChainBuilder:
         self._log_path: str | None = str(log_path) if log_path else None
         # Optional path to save token-level logprobs JSONL aligned by rsid
         self._logprobs_path: str | None = str(logprobs_path) if logprobs_path else None
+        # Optional paths for multi-sample prompt / sample / logprob logs.
+        self._multisample_prompt_path: str | None = (
+            str(multisample_prompt_path) if multisample_prompt_path else None
+        )
+        self._multisample_samples_path: str | None = (
+            str(multisample_samples_path) if multisample_samples_path else None
+        )
+        self._multisample_logprobs_path: str | None = (
+            str(multisample_logprobs_path) if multisample_logprobs_path else None
+        )
         # Store retriever for possible prompt reconstruction/logging
         self._retriever = retriever
-    
+
     def _prompt_construction(self) -> PromptTemplate:
         """
         Construct the prompt template required for taxonomic classification tasks.
@@ -184,6 +202,49 @@ class RAGChainBuilder:
             | self.output_parser
         )
 
+    def _format_prompt(self, inp: dict[str, Any]) -> str:
+        """Format the final prompt string for logging and hashing."""
+        prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
+        return self.prompt.format(**prompt_inputs)
+
+    def _build_generation_runnable(
+        self,
+        *,
+        temperature: float = 1,
+        top_p: float = 1,
+        seed: int | None = DEFAULT_LLM_SEED,
+        top_logprobs: int = 20,
+    ) -> RunnableSerializable[Any, Any]:
+        """Build a generation runnable with configurable sampling parameters."""
+        bind_kwargs: dict[str, Any] = {
+            "logprobs": True,
+            "response_format": {"type": "json_object"},
+            "temperature": temperature,
+            "top_p": top_p,
+            "top_logprobs": top_logprobs,
+        }
+        if seed is not None:
+            bind_kwargs["seed"] = seed
+        return self.prompt | self.llm.bind(**bind_kwargs)
+
+    def _default_result(self) -> TaxBiodiversity:
+        """Return a fallback result when generation or parsing fails."""
+        return TaxBiodiversity(
+            classification={
+                "Kingdom": "Animalia",
+                "Phylum": "N/A",
+                "Class": "N/A",
+                "Order": "N/A",
+                "Family": "N/A",
+                "Genus": "N/A",
+                "Species": "N/A",
+            },
+            ancestral="Error occurred during processing",
+            specific="Error occurred during processing",
+            commentary="Error occurred during processing",
+            bio_knowledge="Error occurred during processing",
+        )
+
     def invoke(self, inp: dict[str, Any]) -> TaxBiodiversity:
         """
         Invoke the RAG chain synchronously with the given input.
@@ -193,17 +254,8 @@ class RAGChainBuilder:
         """
         # Prompt/Response logging
         # Use only required keys for formatting to avoid extra keys issues
-        prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
-        prompt_str = self.prompt.format(**prompt_inputs)
-        # Build a generation runnable that requests logprobs and enforces JSON
-        gen = self.prompt | self.llm.bind(
-            logprobs=True,
-            response_format={"type": "json_object"},
-            temperature=1,
-            top_p=1,
-            seed=DEFAULT_LLM_SEED,
-            top_logprobs=20,
-        )
+        prompt_str = self._format_prompt(inp)
+        gen = self._build_generation_runnable()
         # Invoke model to get AIMessage with response metadata (incl. logprobs)
         ai_msg = gen.invoke(input=inp)
         # Parse JSON to pydantic object using the same parser as before
@@ -222,18 +274,8 @@ class RAGChainBuilder:
         :return: The output of the RAG chain.
         """
         try:
-            # Prompt/Response logging parity with sync invoke
-            prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
-            prompt_str = self.prompt.format(**prompt_inputs)
-            # Build a generation runnable that requests logprobs and enforces JSON
-            gen = self.prompt | self.llm.bind(
-                logprobs=True,
-                response_format={"type": "json_object"},
-                temperature=1,
-                top_p=1,
-                seed=DEFAULT_LLM_SEED,
-                top_logprobs=20,
-            )
+            prompt_str = self._format_prompt(inp)
+            gen = self._build_generation_runnable()
             # Invoke model asynchronously to get AIMessage
             ai_msg = await gen.ainvoke(input=inp)
             # Parse JSON to pydantic object
@@ -249,23 +291,105 @@ class RAGChainBuilder:
             logger.error(f"Error message: {str(e)}")
             logger.error("Full traceback:")
             logger.error(traceback.format_exc())
-            # Return a default result instead of letting the error propagate
-            return TaxBiodiversity(
-                classification={
-                    "Kingdom": "Animalia",
-                    "Phylum": "N/A",
-                    "Class": "N/A",
-                    "Order": "N/A",
-                    "Family": "N/A",
-                    "Genus": "N/A",
-                    "Species": "N/A",
-                },
-                ancestral="Error occurred during processing",
-                specific="Error occurred during processing",
-                commentary="Error occurred during processing",
-                bio_knowledge="Error occurred during processing",
+            return self._default_result()
+
+    async def ainvoke_many(
+        self,
+        inp: dict[str, Any],
+        n_samples: int,
+        base_seed: int | None = DEFAULT_LLM_SEED,
+        seed_mode: str = "incremental",
+        temperature: float = 1,
+        top_p: float = 1,
+        top_logprobs: int = 20,
+    ) -> dict[str, Any]:
+        """Invoke the same prompt multiple times with varied sampling settings."""
+        prompt_str = self._format_prompt(inp)
+        prompt_id = "sha256:" + hashlib.sha256(prompt_str.encode("utf-8")).hexdigest()
+        rsid = inp.get("RSID")
+        self._log_multisample_prompt(
+            prompt=prompt_str,
+            inp=inp,
+            prompt_id=prompt_id,
+            rsid=rsid,
+            n_samples=n_samples,
+            base_seed=base_seed,
+            seed_mode=seed_mode,
+            temperature=temperature,
+            top_p=top_p,
+            top_logprobs=top_logprobs,
+        )
+
+        def _sample_seed(sample_idx: int) -> int | None:
+            if seed_mode == "none":
+                return None
+            if base_seed is None:
+                return None
+            return base_seed + sample_idx
+
+        results: list[TaxBiodiversity] = []
+        sample_seeds: list[int | None] = []
+        for sample_idx in range(n_samples):
+            sample_seed = _sample_seed(sample_idx)
+            sample_seeds.append(sample_seed)
+            ai_msg: Any | None = None
+            response_text = ""
+            parse_ok = False
+            parse_error: str | None = None
+            result = self._default_result()
+            try:
+                gen = self._build_generation_runnable(
+                    temperature=temperature,
+                    top_p=top_p,
+                    seed=sample_seed,
+                    top_logprobs=top_logprobs,
+                )
+                ai_msg = await gen.ainvoke(input=inp)
+                response_text = getattr(ai_msg, "content", "") or ""
+                result = self.output_parser.invoke(response_text)
+                parse_ok = True
+            except Exception as e:
+                parse_error = f"{type(e).__name__}: {e}"
+                logger.error("Error in RAGChainBuilder.ainvoke_many sample:")
+                logger.error(f"sample_idx={sample_idx}, rsid={rsid}")
+                logger.error(traceback.format_exc())
+
+            self._log_multisample_sample(
+                prompt_id=prompt_id,
+                sample_idx=sample_idx,
+                sample_seed=sample_seed,
+                rsid=rsid,
+                response_text=response_text,
+                response=result,
+                parse_ok=parse_ok,
+                parse_error=parse_error,
             )
-    
+            if ai_msg is not None:
+                self._log_logprobs(
+                    prompt_str,
+                    ai_msg,
+                    rsid=rsid,
+                    path_override=self._multisample_logprobs_path,
+                    prompt_id=prompt_id,
+                    sample_idx=sample_idx,
+                    sample_seed=sample_seed,
+                    schema_version="logprob_v2",
+                    gen_params_override={
+                        "logprobs": True,
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "seed": sample_seed,
+                        "top_logprobs": top_logprobs,
+                    },
+                )
+            results.append(result)
+
+        return {
+            "prompt_id": prompt_id,
+            "results": results,
+            "sample_seeds": sample_seeds,
+        }
+
     def _log_pair(self, prompt: str, response: Any, rsid: str | None = None) -> None:
         """Append a prompt/response pair to the configured JSONL log file (if any).
 
@@ -294,7 +418,125 @@ class RAGChainBuilder:
             # Do not crash the main pipeline for logging errors; just warn.
             logger.warning(f"Failed to log prompt/response pair: {log_err}")
 
-    def _log_logprobs(self, prompt: str, ai_message: Any, rsid: str | None = None) -> None:
+    def _log_multisample_prompt(
+        self,
+        *,
+        prompt: str,
+        inp: dict[str, Any],
+        prompt_id: str,
+        rsid: str | None,
+        n_samples: int,
+        base_seed: int | None,
+        seed_mode: str,
+        temperature: float,
+        top_p: float,
+        top_logprobs: int,
+    ) -> None:
+        """Write one prompt-level record for a multi-sample generation run."""
+        if not getattr(self, "_multisample_prompt_path", None):
+            return
+
+        try:
+            Path(self._multisample_prompt_path).expanduser().parent.mkdir(
+                parents=True, exist_ok=True
+            )
+            record = {
+                "prompt_id": prompt_id,
+                "rsid": rsid,
+                "caption": inp.get("caption", ""),
+                "context": inp.get("context", ""),
+                "prompt": prompt,
+                "sampling": {
+                    "num_samples": n_samples,
+                    "base_seed": base_seed,
+                    "seed_mode": seed_mode,
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "top_logprobs": top_logprobs,
+                },
+            }
+            with open(self._multisample_prompt_path, "a", encoding="utf-8") as fp:
+                fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception as log_err:
+            logger.warning(f"Failed to log multisample prompt: {log_err}")
+
+    def _log_multisample_sample(
+        self,
+        *,
+        prompt_id: str,
+        sample_idx: int,
+        sample_seed: int | None,
+        rsid: str | None,
+        response_text: str,
+        response: Any,
+        parse_ok: bool,
+        parse_error: str | None,
+    ) -> None:
+        """Write one sample-level record for a multi-sample generation run."""
+        if not getattr(self, "_multisample_samples_path", None):
+            return
+
+        try:
+            Path(self._multisample_samples_path).expanduser().parent.mkdir(
+                parents=True, exist_ok=True
+            )
+            if hasattr(response, "model_dump"):
+                response_obj = response.model_dump()
+            else:
+                response_obj = str(response)
+            classification = (
+                response_obj.get("classification", {})
+                if isinstance(response_obj, dict)
+                else {}
+            )
+            canonical = "|".join(
+                str(classification.get(rank, "N/A"))
+                for rank in (
+                    "Kingdom",
+                    "Phylum",
+                    "Class",
+                    "Order",
+                    "Family",
+                    "Genus",
+                    "Species",
+                )
+            )
+            response_hash = (
+                "sha256:" + hashlib.sha256(response_text.encode("utf-8")).hexdigest()
+                if response_text
+                else None
+            )
+            record = {
+                "prompt_id": prompt_id,
+                "sample_idx": sample_idx,
+                "sample_id": f"{prompt_id}:{sample_idx}",
+                "rsid": rsid,
+                "sample_seed": sample_seed,
+                "parse_ok": parse_ok,
+                "parse_error": parse_error,
+                "response_text": response_text,
+                "response_text_hash": response_hash,
+                "response": response_obj,
+                "classification_canonical": canonical,
+            }
+            with open(self._multisample_samples_path, "a", encoding="utf-8") as fp:
+                fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception as log_err:
+            logger.warning(f"Failed to log multisample sample: {log_err}")
+
+    def _log_logprobs(
+        self,
+        prompt: str,
+        ai_message: Any,
+        rsid: str | None = None,
+        *,
+        path_override: str | None = None,
+        prompt_id: str | None = None,
+        sample_idx: int | None = None,
+        sample_seed: int | None = None,
+        schema_version: str = "logprob_v1",
+        gen_params_override: dict[str, Any] | None = None,
+    ) -> None:
         """Append a token-level logprobs record to the configured JSONL file (if any).
 
         The record includes:
@@ -303,12 +545,13 @@ class RAGChainBuilder:
           - tokens with per-token logprob and char/byte offsets
           - section mappings: top-level fields and classification ranks
         """
-        if not getattr(self, "_logprobs_path", None):
+        target_path = path_override or getattr(self, "_logprobs_path", None)
+        if not target_path:
             return  # Logging disabled
 
         try:
             # Ensure parent directory exists
-            Path(self._logprobs_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+            Path(target_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
 
             # Extract metadata and tokens from AIMessage
             full_text = getattr(ai_message, "content", "") or ""
@@ -491,15 +734,25 @@ class RAGChainBuilder:
             # Build record
             resp_hash = "sha256:" + hashlib.sha256(full_text.encode("utf-8")).hexdigest()
             record = {
-                "schema_version": "logprob_v1",
+                "schema_version": schema_version,
                 "rsid": rsid,
+                "prompt_id": prompt_id,
+                "sample_idx": sample_idx,
+                "sample_seed": sample_seed,
                 "model": model_name,
                 "created": created,
                 "finish_reason": finish_reason,
                 "system_fingerprint": system_fingerprint,
                 "response_text": full_text,
                 "response_text_hash": resp_hash,
-                "gen_params": {"logprobs": True, "temperature": 1, "top_p": 1, "seed": DEFAULT_LLM_SEED, "top_logprobs": 20},
+                "gen_params": gen_params_override
+                or {
+                    "logprobs": True,
+                    "temperature": 1,
+                    "top_p": 1,
+                    "seed": DEFAULT_LLM_SEED,
+                    "top_logprobs": 20,
+                },
                 "tokens": token_records,
                 "sections": sections,
                 "quality": {
@@ -510,7 +763,7 @@ class RAGChainBuilder:
                 "warnings": warnings,
             }
 
-            with open(self._logprobs_path, "a", encoding="utf-8") as fp:
+            with open(target_path, "a", encoding="utf-8") as fp:
                 fp.write(json.dumps(record, ensure_ascii=False) + "\n")
         except Exception as log_err:
             logger.warning(f"Failed to log logprobs: {log_err}")
@@ -554,6 +807,9 @@ class WikiStellaRAGModel(BaseRetriever):
         multiquery: bool = False,
         log_path: str | None = None,
         logprobs_path: str | None = None,
+        multisample_prompt_path: str | None = None,
+        multisample_samples_path: str | None = None,
+        multisample_logprobs_path: str | None = None,
     ) -> None:
         """
         Initialize WikiStellaRAGModel with config options for multiquery and reranker.
@@ -588,7 +844,14 @@ class WikiStellaRAGModel(BaseRetriever):
             self._add_multiquery()
         if rerank:
             self._add_reranker()
-        self.model = RAGChainBuilder(self.retriever, log_path=log_path, logprobs_path=logprobs_path)
+        self.model = RAGChainBuilder(
+            self.retriever,
+            log_path=log_path,
+            logprobs_path=logprobs_path,
+            multisample_prompt_path=multisample_prompt_path,
+            multisample_samples_path=multisample_samples_path,
+            multisample_logprobs_path=multisample_logprobs_path,
+        )
 
     def _set_up_retriever(self, vstore_path: str) -> Chroma:
         """
@@ -737,3 +1000,30 @@ class WikiStellaRAGModel(BaseRetriever):
             inp["RSID"] = RSID
         # Invoke RAG model and return results
         return await self.model.ainvoke(inp=inp)
+
+    async def ainvoke_many(
+        self,
+        caption: str,
+        RSID: str | None = None,
+        n_samples: int = 1,
+        base_seed: int | None = DEFAULT_LLM_SEED,
+        seed_mode: str = "incremental",
+        temperature: float = 1,
+        top_p: float = 1,
+        top_logprobs: int = 20,
+    ) -> dict[str, Any]:
+        """Invoke the RAG model multiple times on the same retrieved prompt."""
+        docs = await self.aretrieve(caption=caption)
+        formatted_docs = format_docs(docs)
+        inp: dict[str, Any] = {"context": formatted_docs, "caption": caption}
+        if RSID is not None:
+            inp["RSID"] = RSID
+        return await self.model.ainvoke_many(
+            inp=inp,
+            n_samples=n_samples,
+            base_seed=base_seed,
+            seed_mode=seed_mode,
+            temperature=temperature,
+            top_p=top_p,
+            top_logprobs=top_logprobs,
+        )

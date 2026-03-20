@@ -65,6 +65,14 @@ class _QueryImageOutput(TypedDict):
     context: str
 
 
+class _QueryImageManyOutput(TypedDict):
+    caption: str
+    results: list[TaxBiodiversity]
+    context: str
+    prompt_id: str
+    sample_seeds: list[int | None]
+
+
 class ImageRAGModel:
     """
     Taxonomically classify with confidence reasoning and biodiversity knowledge.
@@ -112,6 +120,9 @@ class ImageRAGModel:
         model: str = "gpt-4o",
         prompt_log_path: Optional[str] = None,
         logprobs_log_path: Optional[str] = None,
+        multisample_prompt_log_path: Optional[str] = None,
+        multisample_samples_log_path: Optional[str] = None,
+        multisample_logprobs_log_path: Optional[str] = None,
     ):
         load_api_keys()
         if cap is None:
@@ -131,6 +142,9 @@ class ImageRAGModel:
             multiquery=multiquery,
             log_path=prompt_log_path,
             logprobs_path=logprobs_log_path,
+            multisample_prompt_path=multisample_prompt_log_path,
+            multisample_samples_path=multisample_samples_log_path,
+            multisample_logprobs_path=multisample_logprobs_log_path,
         )
 
     def get_device(self) -> torch.device:
@@ -247,6 +261,78 @@ class ImageRAGModel:
         )
         return await self.captioner.generate_caption(image_b64)
 
+    async def query_image_many(
+        self,
+        image_url: Optional[str] = None,
+        image_obj: Optional[Any] = None,
+        image_path: Optional[str] = None,
+        context: bool = False,
+        verbose: int = 1,
+        rsid: Optional[str] = None,
+        n_samples: int = 1,
+        base_seed: Optional[int] = 12345,
+        seed_mode: str = "incremental",
+        sampling_temperature: float = 1.0,
+        sampling_top_p: float = 1.0,
+    ) -> _QueryImageManyOutput:
+        """Generate multiple responses for one fixed caption/context prompt."""
+        try:
+            image_b64 = self.image_processor.process_image(
+                image_url=image_url, image_obj=image_obj, image_path=image_path
+            )
+            caption = await self.captioner.generate_caption(image_b64)
+            if verbose > 0:
+                print("querying...")
+            generation = await self.rag_model.ainvoke_many(
+                caption=caption,
+                RSID=rsid,
+                n_samples=n_samples,
+                base_seed=base_seed,
+                seed_mode=seed_mode,
+                temperature=sampling_temperature,
+                top_p=sampling_top_p,
+            )
+            if context:
+                docs = await self.rag_model.aretrieve(caption=caption)
+                cntxt = "\n\n".join([f"{d.metadata}\n{d.page_content}" for d in docs])
+        except Exception as er:
+            print(f"{er} occurred")
+            caption = ""
+            generation = {
+                "prompt_id": "",
+                "results": [
+                    TaxBiodiversity(
+                        classification={
+                            "Kingdom": "Animalia",
+                            "Phylum": "N/A",
+                            "Class": "N/A",
+                            "Order": "N/A",
+                            "Family": "N/A",
+                            "Genus": "N/A",
+                            "Species": "N/A",
+                        },
+                        ancestral="",
+                        specific="",
+                        commentary="",
+                        bio_knowledge="",
+                    )
+                ],
+                "sample_seeds": [base_seed],
+            }
+        if not context:
+            cntxt = ""
+        output = _QueryImageManyOutput(
+            caption=caption,
+            results=generation["results"],
+            context=cntxt,
+            prompt_id=generation["prompt_id"],
+            sample_seeds=generation["sample_seeds"],
+        )
+
+        if verbose > 0:
+            print("queried...")
+        return output
+
     async def rarespecies_dataset_run(
         self, interval: tuple[int, int] = (0, 999), verbose: int = 1
     ) -> list[dict[str, Any]]:
@@ -343,6 +429,85 @@ class ImageRAGModel:
                     print(output["caption"])
                     print("=" * 50)
                     print(output["response"])
+                batch.append(output)
+            outputs.extend(batch)
+        gc.collect()
+        torch.cuda.empty_cache()
+        return outputs
+
+    async def rarespecies_dataset_run_many(
+        self,
+        interval: tuple[int, int] = (0, 999),
+        verbose: int = 1,
+        n_samples: int = 1,
+        base_seed: Optional[int] = 12345,
+        seed_mode: str = "incremental",
+        sampling_temperature: float = 1.0,
+        sampling_top_p: float = 1.0,
+    ) -> list[dict[str, Any]]:
+        """Process the dataset while collecting multiple generations per sample."""
+        dataloader = RareSpeciesEvaluator(interval=interval).dataloader()
+        outputs = []
+        for image_objs, class_dicts in dataloader:
+            tasks, true_classes, batch = [], [], []
+            for img_obj, class_dict in zip(image_objs, class_dicts):
+                tasks.append(
+                    self.query_image_many(
+                        image_obj=img_obj,
+                        context=False,
+                        rsid=class_dict.get("RSID"),
+                        n_samples=n_samples,
+                        base_seed=base_seed,
+                        seed_mode=seed_mode,
+                        sampling_temperature=sampling_temperature,
+                        sampling_top_p=sampling_top_p,
+                    )
+                )
+                true_classes.append(class_dict)
+            rag_responses = await asyncio.gather(*tasks)
+            torch.cuda.empty_cache()
+            for i, response in enumerate(rag_responses):
+                true_class = {
+                    level: true_classes[i][level]
+                    for level in true_classes[i]
+                    if level != "RSID"
+                }
+                sample_outputs = []
+                for sample_idx, result in enumerate(response["results"]):
+                    cls = result.classification
+                    guess_class = {
+                        level: cls[level] for level in cls if cls[level] != "N/A"
+                    }
+                    guess_class = {
+                        level: guess_class[level]
+                        for level in guess_class
+                        if level != "Domain"
+                    }
+                    sample_output: dict[str, Union[str, int, None, dict[str, str]]] = {
+                        "sample_idx": sample_idx,
+                        "sample_seed": response["sample_seeds"][sample_idx],
+                        "ancestral": result.ancestral,
+                        "specific": result.specific,
+                        "commentary": result.commentary,
+                        "biodiversity": result.bio_knowledge,
+                        "guess_class": guess_class,
+                    }
+                    sample_output["response"] = simple_string_output(sample_output)
+                    sample_outputs.append(sample_output)
+                output: dict[str, Any] = {
+                    "caption": response["caption"],
+                    "true_class": true_class,
+                    "context": response.get("context", ""),
+                    "prompt_id": response["prompt_id"],
+                    "samples": sample_outputs,
+                    "RSID": true_classes[i]["RSID"],
+                }
+                if verbose > 2:
+                    print("=" * 50)
+                    print(output["caption"])
+                    print("=" * 50)
+                    for sample in sample_outputs:
+                        print(sample["response"])
                 batch.append(output)
             outputs.extend(batch)
         gc.collect()

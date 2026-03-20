@@ -94,6 +94,42 @@ def _parse_arguments() -> argparse.Namespace:
         default=999,
         help="End index in rare-species dataset (default: 999)",
     )
+    parser.add_argument(
+        "--multi-sampling",
+        action="store_true",
+        help="Collect multiple responses for the same final prompt.",
+    )
+    parser.add_argument(
+        "--num-samples",
+        type=int,
+        default=5,
+        help="Number of responses to sample per prompt when multi-sampling.",
+    )
+    parser.add_argument(
+        "--base-seed",
+        type=int,
+        default=12345,
+        help="Base seed used for multi-sampling when seed mode is incremental.",
+    )
+    parser.add_argument(
+        "--seed-mode",
+        type=str,
+        choices=("incremental", "none"),
+        default="incremental",
+        help="Seed strategy for multi-sampling.",
+    )
+    parser.add_argument(
+        "--sampling-temperature",
+        type=float,
+        default=1.0,
+        help="Temperature used for multi-sampling generations.",
+    )
+    parser.add_argument(
+        "--sampling-top-p",
+        type=float,
+        default=1.0,
+        help="Top-p used for multi-sampling generations.",
+    )
 
     return parser.parse_args()
 
@@ -120,6 +156,12 @@ async def main() -> None:
     write = args.write
     output_path = args.output
     interval = (args.interval_start, args.interval_end)
+    multi_sampling = args.multi_sampling
+    num_samples = args.num_samples
+    base_seed = args.base_seed
+    seed_mode = args.seed_mode
+    sampling_temperature = args.sampling_temperature
+    sampling_top_p = args.sampling_top_p
 
     current_date = datetime.datetime.now().strftime("%Y-%m-%d")
     current_time = datetime.datetime.now().strftime("%H-%M-%S")
@@ -129,9 +171,35 @@ async def main() -> None:
     logprobs_jsonl_name = str(
         output_path + f"RS_simpRAG_logprobs_{current_date}_{current_time}.jsonl"
     )
+    multisample_prompts_jsonl_name = str(
+        output_path
+        + f"RS_simpRAG_multisample_prompts_n{num_samples}_{current_date}_{current_time}.jsonl"
+    )
+    multisample_samples_jsonl_name = str(
+        output_path
+        + f"RS_simpRAG_multisample_samples_n{num_samples}_{current_date}_{current_time}.jsonl"
+    )
+    multisample_logprobs_jsonl_name = str(
+        output_path
+        + f"RS_simpRAG_multisample_logprobs_n{num_samples}_{current_date}_{current_time}.jsonl"
+    )
 
     # 1. Build Model, 2. RareSpecies Run, 3. Extract Results
-    model = ImageRAGModel(vstore_path=vstore_path, model="gpt-4o", prompt_log_path=prompt_jsonl_name if write else None, logprobs_log_path=logprobs_jsonl_name if write else None)
+    model = ImageRAGModel(
+        vstore_path=vstore_path,
+        model="gpt-4o",
+        prompt_log_path=prompt_jsonl_name if write else None,
+        logprobs_log_path=logprobs_jsonl_name if write else None,
+        multisample_prompt_log_path=(
+            multisample_prompts_jsonl_name if write and multi_sampling else None
+        ),
+        multisample_samples_log_path=(
+            multisample_samples_jsonl_name if write and multi_sampling else None
+        ),
+        multisample_logprobs_log_path=(
+            multisample_logprobs_jsonl_name if write and multi_sampling else None
+        ),
+    )
     print(f"Device: {model.get_device()}")
     rarespp_predictions = await model.rarespecies_dataset_run(
         interval=interval, verbose=2
@@ -222,6 +290,17 @@ async def main() -> None:
                     dst.write(ln)
         except Exception:
             pass
+
+    if multi_sampling:
+        await model.rarespecies_dataset_run_many(
+            interval=interval,
+            verbose=2,
+            n_samples=num_samples,
+            base_seed=base_seed,
+            seed_mode=seed_mode,
+            sampling_temperature=sampling_temperature,
+            sampling_top_p=sampling_top_p,
+        )
 
 
 if __name__ == "__main__":
