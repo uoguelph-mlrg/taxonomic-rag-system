@@ -23,9 +23,11 @@ Dependencies:
     - taxonomic_rag_system.utils.helpers
 """
 
-import logging
 import hashlib
+import json  # For saving prompt/response pairs
+import logging
 import traceback
+from pathlib import Path  # Handle log file paths
 from typing import Any, Union, overload
 
 import torch
@@ -39,8 +41,6 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableSerializable
 from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_openai import ChatOpenAI
-import json  # For saving prompt/response pairs
-from pathlib import Path  # Handle log file paths
 
 # Local imports
 from taxonomic_rag_system.utils.helpers import format_docs, load_api_keys, unique_docs
@@ -214,15 +214,17 @@ class RAGChainBuilder:
         top_p: float = 1,
         seed: int | None = DEFAULT_LLM_SEED,
         top_logprobs: int = 20,
+        use_logprobs: bool = True,
     ) -> RunnableSerializable[Any, Any]:
         """Build a generation runnable with configurable sampling parameters."""
         bind_kwargs: dict[str, Any] = {
-            "logprobs": True,
             "response_format": {"type": "json_object"},
             "temperature": temperature,
             "top_p": top_p,
-            "top_logprobs": top_logprobs,
         }
+        if use_logprobs:
+            bind_kwargs["logprobs"] = True
+            bind_kwargs["top_logprobs"] = top_logprobs
         if seed is not None:
             bind_kwargs["seed"] = seed
         return self.prompt | self.llm.bind(**bind_kwargs)
@@ -302,6 +304,7 @@ class RAGChainBuilder:
         temperature: float = 1,
         top_p: float = 1,
         top_logprobs: int = 20,
+        use_logprobs: bool = False,
     ) -> dict[str, Any]:
         """Invoke the same prompt multiple times with varied sampling settings."""
         prompt_str = self._format_prompt(inp)
@@ -317,7 +320,8 @@ class RAGChainBuilder:
             seed_mode=seed_mode,
             temperature=temperature,
             top_p=top_p,
-            top_logprobs=top_logprobs,
+            use_logprobs=use_logprobs,
+            top_logprobs=top_logprobs if use_logprobs else None,
         )
 
         def _sample_seed(sample_idx: int) -> int | None:
@@ -343,6 +347,7 @@ class RAGChainBuilder:
                     top_p=top_p,
                     seed=sample_seed,
                     top_logprobs=top_logprobs,
+                    use_logprobs=use_logprobs,
                 )
                 ai_msg = await gen.ainvoke(input=inp)
                 response_text = getattr(ai_msg, "content", "") or ""
@@ -364,7 +369,7 @@ class RAGChainBuilder:
                 parse_ok=parse_ok,
                 parse_error=parse_error,
             )
-            if ai_msg is not None:
+            if ai_msg is not None and use_logprobs:
                 self._log_logprobs(
                     prompt_str,
                     ai_msg,
@@ -430,7 +435,8 @@ class RAGChainBuilder:
         seed_mode: str,
         temperature: float,
         top_p: float,
-        top_logprobs: int,
+        use_logprobs: bool,
+        top_logprobs: int | None,
     ) -> None:
         """Write one prompt-level record for a multi-sample generation run."""
         if not getattr(self, "_multisample_prompt_path", None):
@@ -452,6 +458,7 @@ class RAGChainBuilder:
                     "seed_mode": seed_mode,
                     "temperature": temperature,
                     "top_p": top_p,
+                    "logprobs": use_logprobs,
                     "top_logprobs": top_logprobs,
                 },
             }
@@ -668,7 +675,7 @@ class RAGChainBuilder:
                 j += 1
                 while j < len(raw) and raw[j] in " \t\r\n":
                     j += 1
-                if j >= len(raw) or raw[j] != '{':
+                if j >= len(raw) or raw[j] != "{":
                     return None
                 # Brace matching with string awareness
                 depth = 0
@@ -688,9 +695,9 @@ class RAGChainBuilder:
                         in_str = True
                         p += 1
                         continue
-                    if ch == '{':
+                    if ch == "{":
                         depth += 1
-                    elif ch == '}':
+                    elif ch == "}":
                         depth -= 1
                         if depth == 0:
                             return (j, p + 1)
@@ -1010,6 +1017,7 @@ class WikiStellaRAGModel(BaseRetriever):
         seed_mode: str = "incremental",
         temperature: float = 1,
         top_p: float = 1,
+        use_logprobs: bool = False,
         top_logprobs: int = 20,
     ) -> dict[str, Any]:
         """Invoke the RAG model multiple times on the same retrieved prompt."""
@@ -1026,4 +1034,5 @@ class WikiStellaRAGModel(BaseRetriever):
             temperature=temperature,
             top_p=top_p,
             top_logprobs=top_logprobs,
+            use_logprobs=use_logprobs,
         )

@@ -46,13 +46,13 @@ from taxonomic_rag_system.core.image_rag import ImageRAGModel
 # Local imports
 from taxonomic_rag_system.utils.helpers import (
     extract_tax_metrics_rs,
+    hierarchical_metrics,
+    per_rank_hierarchical_metrics,
+    sample_hierarchical_metrics,
     write_overall_metrics,
+    write_per_rank_binary_jsonl,
     write_preds_to_csv,
     write_rank_attempts_csv,
-    hierarchical_metrics,
-    write_per_rank_binary_jsonl,
-    sample_hierarchical_metrics,
-    per_rank_hierarchical_metrics,
 )
 
 
@@ -97,7 +97,10 @@ def _parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--multi-sampling",
         action="store_true",
-        help="Collect multiple responses for the same final prompt.",
+        help=(
+            "Collect multiple responses for the same final prompt (no per-sample "
+            "token logprobs or multisample logprob JSONL; main-pass logprobs unchanged)."
+        ),
     )
     parser.add_argument(
         "--num-samples",
@@ -179,10 +182,6 @@ async def main() -> None:
         output_path
         + f"RS_simpRAG_multisample_samples_n{num_samples}_{current_date}_{current_time}.jsonl"
     )
-    multisample_logprobs_jsonl_name = str(
-        output_path
-        + f"RS_simpRAG_multisample_logprobs_n{num_samples}_{current_date}_{current_time}.jsonl"
-    )
 
     # 1. Build Model, 2. RareSpecies Run, 3. Extract Results
     model = ImageRAGModel(
@@ -196,9 +195,7 @@ async def main() -> None:
         multisample_samples_log_path=(
             multisample_samples_jsonl_name if write and multi_sampling else None
         ),
-        multisample_logprobs_log_path=(
-            multisample_logprobs_jsonl_name if write and multi_sampling else None
-        ),
+        multisample_logprobs_log_path=None,
     )
     print(f"Device: {model.get_device()}")
     rarespp_predictions = await model.rarespecies_dataset_run(
@@ -260,7 +257,9 @@ async def main() -> None:
                 m = sample_hierarchical_metrics(s.get("true_class", {}), s.get("guess_class", {}))
                 rsid_to_hier[str(rsid_val)] = m
                 try:
-                    from taxonomic_rag_system.utils.helpers import sample_binary_accuracy
+                    from taxonomic_rag_system.utils.helpers import (
+                        sample_binary_accuracy,
+                    )
                     ba = sample_binary_accuracy(s.get("true_class", {}) or {}, s.get("guess_class", {}) or {})
                 except Exception:
                     ba = None
