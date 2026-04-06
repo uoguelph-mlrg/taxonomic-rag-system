@@ -106,7 +106,10 @@ def _parse_arguments() -> argparse.Namespace:
         "--num-samples",
         type=int,
         default=5,
-        help="Number of responses to sample per prompt when multi-sampling.",
+        help=(
+            "Number of stochastic responses to sample per prompt when multi-sampling "
+            "(excludes the base response)."
+        ),
     )
     parser.add_argument(
         "--base-seed",
@@ -178,6 +181,10 @@ async def main() -> None:
         output_path
         + f"RS_simpRAG_multisample_prompts_n{num_samples}_{current_date}_{current_time}.jsonl"
     )
+    multisample_base_jsonl_name = str(
+        output_path
+        + f"RS_simpRAG_multisample_base_response_{current_date}_{current_time}.jsonl"
+    )
     multisample_samples_jsonl_name = str(
         output_path
         + f"RS_simpRAG_multisample_samples_n{num_samples}_{current_date}_{current_time}.jsonl"
@@ -187,10 +194,16 @@ async def main() -> None:
     model = ImageRAGModel(
         vstore_path=vstore_path,
         model="gpt-4o",
-        prompt_log_path=prompt_jsonl_name if write else None,
+        # In multi-sampling mode, base response is logged separately to guarantee
+        # the prompt matches the sampling prompt.
+        prompt_log_path=prompt_jsonl_name if write and (not multi_sampling) else None,
+        # In multi-sampling mode, only the base response requests/saves token logprobs.
         logprobs_log_path=logprobs_jsonl_name if write else None,
         multisample_prompt_log_path=(
             multisample_prompts_jsonl_name if write and multi_sampling else None
+        ),
+        multisample_base_log_path=(
+            multisample_base_jsonl_name if write and multi_sampling else None
         ),
         multisample_samples_log_path=(
             multisample_samples_jsonl_name if write and multi_sampling else None
@@ -198,9 +211,20 @@ async def main() -> None:
         multisample_logprobs_log_path=None,
     )
     print(f"Device: {model.get_device()}")
-    rarespp_predictions = await model.rarespecies_dataset_run(
-        interval=interval, verbose=2
-    )
+    if multi_sampling:
+        rarespp_predictions = await model.rarespecies_dataset_run_many(
+            interval=interval,
+            verbose=2,
+            n_samples=num_samples,
+            base_seed=base_seed,
+            seed_mode=seed_mode,
+            sampling_temperature=sampling_temperature,
+            sampling_top_p=sampling_top_p,
+        )
+    else:
+        rarespp_predictions = await model.rarespecies_dataset_run(
+            interval=interval, verbose=2
+        )
     overalls, preds = extract_tax_metrics_rs(rarespp_predictions, verbose=True)
 
     if write:
@@ -290,16 +314,7 @@ async def main() -> None:
         except Exception:
             pass
 
-    if multi_sampling:
-        await model.rarespecies_dataset_run_many(
-            interval=interval,
-            verbose=2,
-            n_samples=num_samples,
-            base_seed=base_seed,
-            seed_mode=seed_mode,
-            sampling_temperature=sampling_temperature,
-            sampling_top_p=sampling_top_p,
-        )
+    # Multi-sampling is handled above to avoid double caption/context generation.
 
 
 if __name__ == "__main__":

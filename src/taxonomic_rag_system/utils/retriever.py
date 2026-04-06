@@ -115,6 +115,7 @@ class RAGChainBuilder:
         log_path: str | None = None,
         logprobs_path: str | None = None,
         multisample_prompt_path: str | None = None,
+        multisample_base_path: str | None = None,
         multisample_samples_path: str | None = None,
         multisample_logprobs_path: str | None = None,
     ) -> None:
@@ -163,6 +164,9 @@ class RAGChainBuilder:
         # Optional paths for multi-sample prompt / sample / logprob logs.
         self._multisample_prompt_path: str | None = (
             str(multisample_prompt_path) if multisample_prompt_path else None
+        )
+        self._multisample_base_path: str | None = (
+            str(multisample_base_path) if multisample_base_path else None
         )
         self._multisample_samples_path: str | None = (
             str(multisample_samples_path) if multisample_samples_path else None
@@ -307,21 +311,27 @@ class RAGChainBuilder:
         use_logprobs: bool = False,
     ) -> dict[str, Any]:
         """Invoke the same prompt multiple times with varied sampling settings."""
+        # NOTE: In multi-sampling mode we only request/save token-level logprobs for the
+        # base (main) response. Stochastic samples must not request or save logprobs.
+        use_logprobs_samples = False
+        use_logprobs_base = bool(getattr(self, "_logprobs_path", None))
         prompt_str = self._format_prompt(inp)
         prompt_id = "sha256:" + hashlib.sha256(prompt_str.encode("utf-8")).hexdigest()
         rsid = inp.get("RSID")
+        prompt_index: int | None = inp.get("prompt_index")
         self._log_multisample_prompt(
             prompt=prompt_str,
             inp=inp,
             prompt_id=prompt_id,
             rsid=rsid,
+            prompt_index=prompt_index,
             n_samples=n_samples,
             base_seed=base_seed,
             seed_mode=seed_mode,
             temperature=temperature,
             top_p=top_p,
-            use_logprobs=use_logprobs,
-            top_logprobs=top_logprobs if use_logprobs else None,
+            use_logprobs=use_logprobs_samples,
+            top_logprobs=None,
         )
 
         def _sample_seed(sample_idx: int) -> int | None:
@@ -330,6 +340,65 @@ class RAGChainBuilder:
             if base_seed is None:
                 return None
             return base_seed + sample_idx
+
+        # Base response (deterministic main prediction): same prompt, temperature=0.
+        base_seed_used: int | None = None
+        if seed_mode != "none":
+            base_seed_used = base_seed
+        base_temperature = 0.0
+        base_top_p = 1.0
+        base_result = self._default_result()
+        base_response_text = ""
+        base_parse_ok = False
+        base_parse_error: str | None = None
+        try:
+            gen_base = self._build_generation_runnable(
+                temperature=base_temperature,
+                top_p=base_top_p,
+                seed=base_seed_used,
+                top_logprobs=top_logprobs,
+                use_logprobs=use_logprobs_base,
+            )
+            ai_msg_base = await gen_base.ainvoke(input=inp)
+            base_response_text = getattr(ai_msg_base, "content", "") or ""
+            base_result = self.output_parser.invoke(base_response_text)
+            base_parse_ok = True
+            if use_logprobs_base:
+                self._log_logprobs(
+                    prompt_str,
+                    ai_msg_base,
+                    rsid=rsid,
+                    prompt_id=prompt_id,
+                    sample_idx=None,
+                    sample_seed=base_seed_used,
+                    schema_version="logprob_v2",
+                    gen_params_override={
+                        "logprobs": True,
+                        "temperature": base_temperature,
+                        "top_p": base_top_p,
+                        "seed": base_seed_used,
+                        "top_logprobs": top_logprobs,
+                    },
+                )
+        except Exception as e:
+            base_parse_error = f"{type(e).__name__}: {e}"
+            logger.error("Error in RAGChainBuilder.ainvoke_many base response:")
+            logger.error(f"rsid={rsid}")
+            logger.error(traceback.format_exc())
+
+        self._log_multisample_base(
+            prompt_id=prompt_id,
+            rsid=rsid,
+            prompt_index=prompt_index,
+            seed_mode=seed_mode,
+            seed=base_seed_used,
+            temperature=base_temperature,
+            top_p=base_top_p,
+            response_text=base_response_text,
+            response=base_result,
+            parse_ok=base_parse_ok,
+            parse_error=base_parse_error,
+        )
 
         results: list[TaxBiodiversity] = []
         sample_seeds: list[int | None] = []
@@ -347,7 +416,7 @@ class RAGChainBuilder:
                     top_p=top_p,
                     seed=sample_seed,
                     top_logprobs=top_logprobs,
-                    use_logprobs=use_logprobs,
+                    use_logprobs=use_logprobs_samples,
                 )
                 ai_msg = await gen.ainvoke(input=inp)
                 response_text = getattr(ai_msg, "content", "") or ""
@@ -361,36 +430,26 @@ class RAGChainBuilder:
 
             self._log_multisample_sample(
                 prompt_id=prompt_id,
+                prompt_index=prompt_index,
                 sample_idx=sample_idx,
                 sample_seed=sample_seed,
                 rsid=rsid,
+                temperature=temperature,
+                top_p=top_p,
                 response_text=response_text,
                 response=result,
                 parse_ok=parse_ok,
                 parse_error=parse_error,
             )
-            if ai_msg is not None and use_logprobs:
-                self._log_logprobs(
-                    prompt_str,
-                    ai_msg,
-                    rsid=rsid,
-                    path_override=self._multisample_logprobs_path,
-                    prompt_id=prompt_id,
-                    sample_idx=sample_idx,
-                    sample_seed=sample_seed,
-                    schema_version="logprob_v2",
-                    gen_params_override={
-                        "logprobs": True,
-                        "temperature": temperature,
-                        "top_p": top_p,
-                        "seed": sample_seed,
-                        "top_logprobs": top_logprobs,
-                    },
-                )
+            # Samples never request/save logprobs in this multi-sampling mode.
             results.append(result)
 
         return {
             "prompt_id": prompt_id,
+            "base_result": base_result,
+            "base_seed": base_seed_used,
+            "base_temperature": base_temperature,
+            "base_top_p": base_top_p,
             "results": results,
             "sample_seeds": sample_seeds,
         }
@@ -430,6 +489,7 @@ class RAGChainBuilder:
         inp: dict[str, Any],
         prompt_id: str,
         rsid: str | None,
+        prompt_index: int | None,
         n_samples: int,
         base_seed: int | None,
         seed_mode: str,
@@ -449,6 +509,7 @@ class RAGChainBuilder:
             record = {
                 "prompt_id": prompt_id,
                 "rsid": rsid,
+                "prompt_index": prompt_index,
                 "caption": inp.get("caption", ""),
                 "context": inp.get("context", ""),
                 "prompt": prompt,
@@ -467,13 +528,87 @@ class RAGChainBuilder:
         except Exception as log_err:
             logger.warning(f"Failed to log multisample prompt: {log_err}")
 
+    def _log_multisample_base(
+        self,
+        *,
+        prompt_id: str,
+        rsid: str | None,
+        prompt_index: int | None,
+        seed_mode: str,
+        seed: int | None,
+        temperature: float,
+        top_p: float,
+        response_text: str,
+        response: Any,
+        parse_ok: bool,
+        parse_error: str | None,
+    ) -> None:
+        """Write one base-response record for a multi-sample generation run."""
+        if not getattr(self, "_multisample_base_path", None):
+            return
+
+        try:
+            Path(self._multisample_base_path).expanduser().parent.mkdir(
+                parents=True, exist_ok=True
+            )
+            if hasattr(response, "model_dump"):
+                response_obj = response.model_dump()
+            else:
+                response_obj = str(response)
+            classification = (
+                response_obj.get("classification", {})
+                if isinstance(response_obj, dict)
+                else {}
+            )
+            canonical = "|".join(
+                str(classification.get(rank, "N/A"))
+                for rank in (
+                    "Kingdom",
+                    "Phylum",
+                    "Class",
+                    "Order",
+                    "Family",
+                    "Genus",
+                    "Species",
+                )
+            )
+            response_hash = (
+                "sha256:" + hashlib.sha256(response_text.encode("utf-8")).hexdigest()
+                if response_text
+                else None
+            )
+            record = {
+                "prompt_id": prompt_id,
+                "sample_role": "base",
+                "rsid": rsid,
+                "prompt_index": prompt_index,
+                "seed_mode": seed_mode,
+                "seed": seed,
+                "temperature": temperature,
+                "top_p": top_p,
+                "logprobs": bool(getattr(self, "_logprobs_path", None)),
+                "parse_ok": parse_ok,
+                "parse_error": parse_error,
+                "response_text": response_text,
+                "response_text_hash": response_hash,
+                "response": response_obj,
+                "classification_canonical": canonical,
+            }
+            with open(self._multisample_base_path, "a", encoding="utf-8") as fp:
+                fp.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception as log_err:
+            logger.warning(f"Failed to log multisample base response: {log_err}")
+
     def _log_multisample_sample(
         self,
         *,
         prompt_id: str,
+        prompt_index: int | None,
         sample_idx: int,
         sample_seed: int | None,
         rsid: str | None,
+        temperature: float,
+        top_p: float,
         response_text: str,
         response: Any,
         parse_ok: bool,
@@ -517,8 +652,12 @@ class RAGChainBuilder:
                 "prompt_id": prompt_id,
                 "sample_idx": sample_idx,
                 "sample_id": f"{prompt_id}:{sample_idx}",
+                "sample_role": "sample",
                 "rsid": rsid,
+                "prompt_index": prompt_index,
                 "sample_seed": sample_seed,
+                "temperature": temperature,
+                "top_p": top_p,
                 "parse_ok": parse_ok,
                 "parse_error": parse_error,
                 "response_text": response_text,
@@ -815,6 +954,7 @@ class WikiStellaRAGModel(BaseRetriever):
         log_path: str | None = None,
         logprobs_path: str | None = None,
         multisample_prompt_path: str | None = None,
+        multisample_base_path: str | None = None,
         multisample_samples_path: str | None = None,
         multisample_logprobs_path: str | None = None,
     ) -> None:
@@ -856,6 +996,7 @@ class WikiStellaRAGModel(BaseRetriever):
             log_path=log_path,
             logprobs_path=logprobs_path,
             multisample_prompt_path=multisample_prompt_path,
+            multisample_base_path=multisample_base_path,
             multisample_samples_path=multisample_samples_path,
             multisample_logprobs_path=multisample_logprobs_path,
         )
@@ -1012,6 +1153,7 @@ class WikiStellaRAGModel(BaseRetriever):
         self,
         caption: str,
         RSID: str | None = None,
+        prompt_index: int | None = None,
         n_samples: int = 1,
         base_seed: int | None = DEFAULT_LLM_SEED,
         seed_mode: str = "incremental",
@@ -1026,6 +1168,8 @@ class WikiStellaRAGModel(BaseRetriever):
         inp: dict[str, Any] = {"context": formatted_docs, "caption": caption}
         if RSID is not None:
             inp["RSID"] = RSID
+        if prompt_index is not None:
+            inp["prompt_index"] = prompt_index
         return await self.model.ainvoke_many(
             inp=inp,
             n_samples=n_samples,
@@ -1034,5 +1178,6 @@ class WikiStellaRAGModel(BaseRetriever):
             temperature=temperature,
             top_p=top_p,
             top_logprobs=top_logprobs,
-            use_logprobs=use_logprobs,
+            # Samples never request/save logprobs in multi-sampling.
+            use_logprobs=False,
         )

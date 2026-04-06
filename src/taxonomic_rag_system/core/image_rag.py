@@ -121,6 +121,7 @@ class ImageRAGModel:
         prompt_log_path: Optional[str] = None,
         logprobs_log_path: Optional[str] = None,
         multisample_prompt_log_path: Optional[str] = None,
+        multisample_base_log_path: Optional[str] = None,
         multisample_samples_log_path: Optional[str] = None,
         multisample_logprobs_log_path: Optional[str] = None,
     ):
@@ -143,6 +144,7 @@ class ImageRAGModel:
             log_path=prompt_log_path,
             logprobs_path=logprobs_log_path,
             multisample_prompt_path=multisample_prompt_log_path,
+            multisample_base_path=multisample_base_log_path,
             multisample_samples_path=multisample_samples_log_path,
             multisample_logprobs_path=multisample_logprobs_log_path,
         )
@@ -269,6 +271,7 @@ class ImageRAGModel:
         context: bool = False,
         verbose: int = 1,
         rsid: Optional[str] = None,
+        prompt_index: Optional[int] = None,
         n_samples: int = 1,
         base_seed: Optional[int] = 12345,
         seed_mode: str = "incremental",
@@ -286,6 +289,7 @@ class ImageRAGModel:
             generation = await self.rag_model.ainvoke_many(
                 caption=caption,
                 RSID=rsid,
+                prompt_index=prompt_index,
                 n_samples=n_samples,
                 base_seed=base_seed,
                 seed_mode=seed_mode,
@@ -448,6 +452,7 @@ class ImageRAGModel:
         """Process the dataset while collecting multiple generations per sample."""
         dataloader = RareSpeciesEvaluator(interval=interval).dataloader()
         outputs = []
+        prompt_index = 0
         for image_objs, class_dicts in dataloader:
             tasks, true_classes, batch = [], [], []
             for img_obj, class_dict in zip(image_objs, class_dicts):
@@ -456,6 +461,7 @@ class ImageRAGModel:
                         image_obj=img_obj,
                         context=False,
                         rsid=class_dict.get("RSID"),
+                        prompt_index=prompt_index,
                         n_samples=n_samples,
                         base_seed=base_seed,
                         seed_mode=seed_mode,
@@ -463,6 +469,7 @@ class ImageRAGModel:
                         sampling_top_p=sampling_top_p,
                     )
                 )
+                prompt_index += 1
                 true_classes.append(class_dict)
             rag_responses = await asyncio.gather(*tasks)
             torch.cuda.empty_cache()
@@ -494,11 +501,26 @@ class ImageRAGModel:
                     }
                     sample_output["response"] = simple_string_output(sample_output)
                     sample_outputs.append(sample_output)
+
+                # Base response (temperature=0) is the main prediction in multi-sampling mode.
+                base_result = response.get("base_result")
+                base_guess_class: dict[str, str] = {}
+                if base_result is not None:
+                    try:
+                        base_cls = base_result.classification
+                        base_guess_class = {
+                            level: base_cls[level]
+                            for level in base_cls
+                            if base_cls[level] != "N/A" and level != "Domain"
+                        }
+                    except Exception:
+                        base_guess_class = {}
                 output: dict[str, Any] = {
                     "caption": response["caption"],
                     "true_class": true_class,
                     "context": response.get("context", ""),
                     "prompt_id": response["prompt_id"],
+                    "guess_class": base_guess_class,
                     "samples": sample_outputs,
                     "RSID": true_classes[i]["RSID"],
                 }
