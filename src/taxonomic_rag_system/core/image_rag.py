@@ -68,6 +68,7 @@ class _QueryImageOutput(TypedDict):
 class _QueryImageManyOutput(TypedDict):
     caption: str
     results: list[TaxBiodiversity]
+    base_result: TaxBiodiversity
     context: str
     prompt_id: str
     sample_seeds: list[int | None]
@@ -302,25 +303,25 @@ class ImageRAGModel:
         except Exception as er:
             print(f"{er} occurred")
             caption = ""
+            default_result = TaxBiodiversity(
+                classification={
+                    "Kingdom": "Animalia",
+                    "Phylum": "N/A",
+                    "Class": "N/A",
+                    "Order": "N/A",
+                    "Family": "N/A",
+                    "Genus": "N/A",
+                    "Species": "N/A",
+                },
+                ancestral="",
+                specific="",
+                commentary="",
+                bio_knowledge="",
+            )
             generation = {
                 "prompt_id": "",
-                "results": [
-                    TaxBiodiversity(
-                        classification={
-                            "Kingdom": "Animalia",
-                            "Phylum": "N/A",
-                            "Class": "N/A",
-                            "Order": "N/A",
-                            "Family": "N/A",
-                            "Genus": "N/A",
-                            "Species": "N/A",
-                        },
-                        ancestral="",
-                        specific="",
-                        commentary="",
-                        bio_knowledge="",
-                    )
-                ],
+                "base_result": default_result,
+                "results": [default_result],
                 "sample_seeds": [base_seed],
             }
         if not context:
@@ -328,6 +329,7 @@ class ImageRAGModel:
         output = _QueryImageManyOutput(
             caption=caption,
             results=generation["results"],
+            base_result=generation["base_result"],
             context=cntxt,
             prompt_id=generation["prompt_id"],
             sample_seeds=generation["sample_seeds"],
@@ -380,7 +382,11 @@ class ImageRAGModel:
             tasks, true_classes, batch = [], [], []
             # RAG on each caption
             for img_obj, class_dict in zip(image_objs, class_dicts):
-                tasks.append(self.query_image(image_obj=img_obj, context=False, rsid=class_dict.get("RSID")))
+                tasks.append(
+                    self.query_image(
+                        image_obj=img_obj, context=False, rsid=class_dict.get("RSID")
+                    )
+                )
                 true_classes.append(class_dict)
             rag_responses = await asyncio.gather(*tasks)
             torch.cuda.empty_cache()
@@ -499,10 +505,19 @@ class ImageRAGModel:
                         "biodiversity": result.bio_knowledge,
                         "guess_class": guess_class,
                     }
-                    sample_output["response"] = simple_string_output(sample_output)
+                    sample_output["response"] = simple_string_output(
+                        {
+                            "guess_class": guess_class,
+                            "ancestral": result.ancestral,
+                            "specific": result.specific,
+                            "commentary": result.commentary,
+                            "biodiversity": result.bio_knowledge,
+                        }
+                    )
                     sample_outputs.append(sample_output)
 
-                # Base response (temperature=0) is the main prediction in multi-sampling mode.
+                # Base response (temperature=0) is the main prediction in multi-sampling
+                # mode.
                 base_result = response.get("base_result")
                 base_guess_class: dict[str, str] = {}
                 if base_result is not None:
