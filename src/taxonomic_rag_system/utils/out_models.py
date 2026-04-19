@@ -33,7 +33,7 @@ class TaxBiodiversity(BaseModel):
     """
 
     classification: dict[str, str] = Field(
-        description="""Predicted taxonomic classification dictionary, where keys of dictionary are taxonomic ranks, ['Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'], and values of dictionary are predicted classification for a given taxonomic rank.  Provide your best-guess at every rank using scientific names and maintain lineage consistency (ancestors must be compatible with descendants). Prefer filling each rank over using 'N/A'; only output 'N/A' when there is truly no plausible guess from the caption and/or context. If uncertain, still provide the most probable taxon and explain uncertainty in commentary."""
+        description="""Predicted taxonomic classification dictionary, where keys of dictionary are taxonomic ranks, ['Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'], and values of dictionary are predicted classification for a given taxonomic rank. Provide your best-guess at every rank using scientific names and maintain lineage consistency (ancestors must be compatible with descendants). Prefer filling each rank over using 'N/A'; only output 'N/A' when there is truly no plausible guess from the caption and/or context. If uncertain, still provide the most probable taxon and explain uncertainty in commentary."""
     )
     ancestral: str = Field(
         description="Describe traits that are seen in the image caption of the new organism and also seen in describing the organisms in the context."
@@ -57,7 +57,7 @@ class Tax(BaseModel):
     """
 
     classification: dict[str, str] = Field(
-        description="""Predicted taxonomic classification dictionary, where keys of dictionary are taxonomic ranks, ['Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'], and values of dictionary are predicted classification for a given taxonomic rank.  Provide your best-guess at every rank using scientific names and maintain lineage consistency (ancestors must be compatible with descendants). Prefer filling each rank over using 'N/A'; only output 'N/A' when there is truly no plausible guess from the caption and/or context. If uncertain, still provide the most probable taxon and explain uncertainty in commentary.""",
+        description="""Predicted taxonomic classification dictionary, where keys of dictionary are taxonomic ranks, ['Kingdom', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species'], and values of dictionary are predicted classification for a given taxonomic rank. Provide your best-guess at every rank using scientific names and maintain lineage consistency (ancestors must be compatible with descendants). Prefer filling each rank over using 'N/A'; only output 'N/A' when there is truly no plausible guess from the caption and/or context. If uncertain, still provide the most probable taxon and explain uncertainty in commentary.""",
         examples=[
             {
                 "Kingdom": "Animalia",
