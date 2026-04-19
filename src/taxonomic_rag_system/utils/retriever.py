@@ -23,8 +23,9 @@ Dependencies:
     - taxonomic_rag_system.utils.helpers
 """
 
-import logging
+import asyncio
 import hashlib
+import logging
 import traceback
 from typing import Any, Union, overload
 
@@ -109,14 +110,25 @@ class RAGChainBuilder:
     and taxonomic classification generation based on a caption and additional context.
     """
 
-    def __init__(self, retriever: Any, log_path: str | None = None, logprobs_path: str | None = None) -> None:
+    def __init__(
+        self,
+        retriever: Any,
+        llm: Any | None = None,
+        llm_generation_kwargs: dict[str, Any] | None = None,
+        log_path: str | None = None,
+        logprobs_path: str | None = None,
+    ) -> None:
         """
         Initialize RAGChainBuilder with a retriever.
 
         :param retriever: The document retriever to use.
         :param log_path: Optional path to save prompt/response pairs in JSONL format.
         """
-        self.llm = ChatOpenAI(model="gpt-4o")
+        self.llm = llm if llm is not None else ChatOpenAI(model="gpt-4o")
+        self._llm_generation_kwargs: dict[str, Any] = dict(llm_generation_kwargs or {})
+        # Preserve prior default generation behaviour for OpenAI LLMs.
+        self._llm_generation_kwargs.setdefault("temperature", 1)
+        self._llm_generation_kwargs.setdefault("top_p", 1)
         self.output_parser = PydanticOutputParser(pydantic_object=TaxBiodiversity)
         self.system_template = (
             """
@@ -152,6 +164,10 @@ class RAGChainBuilder:
         self._log_path: str | None = str(log_path) if log_path else None
         # Optional path to save token-level logprobs JSONL aligned by rsid
         self._logprobs_path: str | None = str(logprobs_path) if logprobs_path else None
+        self._enable_logprobs: bool = (
+            self._logprobs_path is not None and isinstance(self.llm, ChatOpenAI)
+        )
+        self._enable_json_mode: bool = isinstance(self.llm, ChatOpenAI)
         # Store retriever for possible prompt reconstruction/logging
         self._retriever = retriever
     
@@ -195,23 +211,32 @@ class RAGChainBuilder:
         # Use only required keys for formatting to avoid extra keys issues
         prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
         prompt_str = self.prompt.format(**prompt_inputs)
-        # Build a generation runnable that requests logprobs and enforces JSON
-        gen = self.prompt | self.llm.bind(
-            logprobs=True,
-            response_format={"type": "json_object"},
-            temperature=1,
-            top_p=1,
-            seed=DEFAULT_LLM_SEED,
-            top_logprobs=20,
-        )
-        # Invoke model to get AIMessage with response metadata (incl. logprobs)
-        ai_msg = gen.invoke(input=inp)
-        # Parse JSON to pydantic object using the same parser as before
-        result = self.output_parser.invoke(ai_msg.content)
+        llm_to_use: Any = self.llm
+        bind_kwargs: dict[str, Any] = dict(self._llm_generation_kwargs)
+        if self._enable_json_mode:
+            bind_kwargs.setdefault("response_format", {"type": "json_object"})
+        if self._enable_logprobs:
+            bind_kwargs.setdefault("logprobs", True)
+            bind_kwargs.setdefault("top_logprobs", 20)
+            bind_kwargs.setdefault("seed", DEFAULT_LLM_SEED)
+        if bind_kwargs and hasattr(llm_to_use, "bind"):
+            llm_to_use = llm_to_use.bind(**bind_kwargs)
+        gen = self.prompt | llm_to_use
+
+        raw = gen.invoke(input=inp)
+        if isinstance(raw, str):
+            raw_text = raw
+        else:
+            raw_text = getattr(raw, "content", None)
+            if raw_text is None:
+                raw_text = str(raw)
+
+        result = self.output_parser.invoke(raw_text)
         # Log prompt/response pair with optional RSID
         self._log_pair(prompt_str, result, rsid=inp.get("RSID"))
-        # Also write logprobs JSONL if configured
-        self._log_logprobs(prompt_str, ai_msg, rsid=inp.get("RSID"))
+        # Also write logprobs JSONL if configured and supported by the LLM backend
+        if self._enable_logprobs:
+            self._log_logprobs(prompt_str, raw, rsid=inp.get("RSID"))
         return result
 
     async def ainvoke(self, inp: dict[str, Any]) -> TaxBiodiversity:
@@ -225,23 +250,36 @@ class RAGChainBuilder:
             # Prompt/Response logging parity with sync invoke
             prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
             prompt_str = self.prompt.format(**prompt_inputs)
-            # Build a generation runnable that requests logprobs and enforces JSON
-            gen = self.prompt | self.llm.bind(
-                logprobs=True,
-                response_format={"type": "json_object"},
-                temperature=1,
-                top_p=1,
-                seed=DEFAULT_LLM_SEED,
-                top_logprobs=20,
-            )
-            # Invoke model asynchronously to get AIMessage
-            ai_msg = await gen.ainvoke(input=inp)
-            # Parse JSON to pydantic object
-            result = self.output_parser.invoke(ai_msg.content)
+            llm_to_use: Any = self.llm
+            bind_kwargs: dict[str, Any] = dict(self._llm_generation_kwargs)
+            if self._enable_json_mode:
+                bind_kwargs.setdefault("response_format", {"type": "json_object"})
+            if self._enable_logprobs:
+                bind_kwargs.setdefault("logprobs", True)
+                bind_kwargs.setdefault("top_logprobs", 20)
+                bind_kwargs.setdefault("seed", DEFAULT_LLM_SEED)
+            if bind_kwargs and hasattr(llm_to_use, "bind"):
+                llm_to_use = llm_to_use.bind(**bind_kwargs)
+            gen = self.prompt | llm_to_use
+
+            try:
+                raw = await gen.ainvoke(input=inp)
+            except (NotImplementedError, AttributeError):
+                raw = await asyncio.to_thread(gen.invoke, inp)
+
+            if isinstance(raw, str):
+                raw_text = raw
+            else:
+                raw_text = getattr(raw, "content", None)
+                if raw_text is None:
+                    raw_text = str(raw)
+
+            result = self.output_parser.invoke(raw_text)
             # Log prompt/response pair
             self._log_pair(prompt_str, result, rsid=inp.get("RSID"))
-            # Also write logprobs JSONL if configured
-            self._log_logprobs(prompt_str, ai_msg, rsid=inp.get("RSID"))
+            # Also write logprobs JSONL if configured and supported
+            if self._enable_logprobs:
+                self._log_logprobs(prompt_str, raw, rsid=inp.get("RSID"))
             return result
         except Exception as e:
             logger.error("Error in RAGChainBuilder.ainvoke:")
