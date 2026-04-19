@@ -40,7 +40,6 @@ event loop to execute its methods.
 
 import asyncio
 import gc
-import os
 from typing import Any, Optional, TypedDict, Union
 
 import torch
@@ -113,34 +112,14 @@ class ImageRAGModel:
         model: str = "gpt-4o",
         prompt_log_path: Optional[str] = None,
         logprobs_log_path: Optional[str] = None,
-        # NVIDIA NIM (OpenAI-compatible) configuration for using open models like Qwen
-        nim_base_url: Optional[str] = None,
-        nim_api_key: Optional[str] = None,
-        # Separate model settings for VLM (captioner) and LLM (RAG generator)
-        vlm_model: Optional[str] = None,
-        llm_model: Optional[str] = None,
     ):
         load_api_keys()
-        # Configure captioning client:
-        # - If a client is passed, use it.
-        # - Else, if NIM configuration provided (or NVIDIA_API_KEY present with explicit base_url),
-        #   build an OpenAI-compatible client pointing at NVIDIA NIM.
-        # - Else, default to standard OpenAI client.
         if cap is None:
-            if nim_base_url or nim_api_key:
-                cap = AsyncOpenAI(
-                    base_url=nim_base_url or "https://integrate.api.nvidia.com/v1",
-                    api_key=nim_api_key or os.environ.get("NVIDIA_API_KEY"),
-                )
-            else:
-                cap = AsyncOpenAI()
+            cap = AsyncOpenAI()
         self.image_processor = ImageProcessor()
-        # Resolve model names (backward compatible with previous single 'model' param)
-        _caption_model = vlm_model or model
-        _llm_model = llm_model or model
         self.captioner = DescriptiveCaptioner(
             cap=cap,
-            model=_caption_model,
+            model=model,
         )
         self.rag_model = WikiStellaRAGModel(
             vstore_path=vstore_path,
