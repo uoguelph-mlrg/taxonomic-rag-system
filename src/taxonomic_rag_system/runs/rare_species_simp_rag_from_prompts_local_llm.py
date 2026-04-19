@@ -45,6 +45,12 @@ REQUIRED_RESPONSE_KEYS = {
 }
 
 
+def _fmt_optional(value: Any) -> str:
+    """Format optional CLI values for startup logging."""
+
+    return "<model default>" if value is None else str(value)
+
+
 def _parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -166,6 +172,31 @@ def main() -> None:
     output_path = args.output
     interval = (args.interval_start, args.interval_end)
 
+    print("=== Local prompt->LLM run configuration ===")
+    print(f"model_id: {args.model_id}")
+    print(f"device_map: {args.device_map}")
+    print(f"torch_dtype: {args.torch_dtype}")
+    print(f"trust_remote_code: {bool(args.trust_remote_code)}")
+    print(f"max_new_tokens: {_fmt_optional(args.max_new_tokens)}")
+    print(f"temperature: {_fmt_optional(args.temperature)}")
+    print(f"top_p: {_fmt_optional(args.top_p)}")
+    generation_overrides = {
+        "max_new_tokens": args.max_new_tokens,
+        "temperature": args.temperature,
+        "top_p": args.top_p,
+    }
+    active_overrides = [name for name, value in generation_overrides.items() if value is not None]
+    if active_overrides:
+        print(f"generation overrides active: {', '.join(active_overrides)}")
+    else:
+        print("generation overrides omitted -> use model generation_config defaults")
+    if args.top_p is not None and args.temperature is None:
+        print(
+            "WARNING: --top-p was provided without --temperature; top_p will be ignored "
+            "because sampling overrides are not enabled."
+        )
+    print("==========================================")
+
     current_date = datetime.datetime.now().strftime("%Y-%m-%d")
     current_time = datetime.datetime.now().strftime("%H-%M-%S")
 
@@ -208,8 +239,16 @@ def main() -> None:
                 continue
             rows.append({"rsid": str(rsid), "prompt": str(prompt)})
 
+    print(
+        "Loaded "
+        f"{len(rows)} prompts from {input_jsonl} for interval [{interval[0]}, {interval[1]})"
+    )
+    if not rows:
+        raise SystemExit("No valid prompt rows were loaded from the input JSONL.")
+
     rsids = {r["rsid"] for r in rows}
     gold_map = build_rsid_to_true_class(rsids)
+    print(f"Loaded {len(gold_map)} gold taxonomy records")
 
     llm = build_hf_textgen_llm(
         cfg=LocalLLMConfig(
@@ -223,6 +262,7 @@ def main() -> None:
             return_full_text=False,
         )
     )
+    print(f"Writing outputs under: {output_path or './'}")
 
     out_jsonl_lines: list[str] = []
     samples: list[dict[str, Any]] = []
