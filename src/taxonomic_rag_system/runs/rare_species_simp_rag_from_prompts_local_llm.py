@@ -47,7 +47,6 @@ REQUIRED_RESPONSE_KEYS = {
 
 def _fmt_optional(value: Any) -> str:
     """Format optional CLI values for startup logging."""
-
     return "<model default>" if value is None else str(value)
 
 
@@ -108,7 +107,15 @@ def _parse_arguments() -> argparse.Namespace:
         default=None,
         help="Override the model default top_p. Omit to use the model default.",
     )
-    parser.add_argument("--device-map", type=str, default="auto")
+    parser.add_argument(
+        "--device-map",
+        type=str,
+        default="cuda0",
+        help=(
+            "HF device_map: 'auto', JSON object (e.g. '{\"\": 0}'), or single-GPU alias "
+            'cuda0/gpu0/single/0/cuda:0 (maps to {"": 0} to avoid CPU offload mixups).'
+        ),
+    )
     parser.add_argument("--torch-dtype", type=str, default="auto")
     parser.add_argument(
         "--trust-remote-code",
@@ -165,7 +172,8 @@ def _default_taxbiodiversity() -> dict[str, Any]:
     return tb.model_dump()
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0912, PLR0915
+    """Load prompts, run local HF LLM, write metrics and prediction artifacts."""
     args = _parse_arguments()
     input_jsonl = args.input_jsonl
     write = args.write
@@ -185,7 +193,9 @@ def main() -> None:
         "temperature": args.temperature,
         "top_p": args.top_p,
     }
-    active_overrides = [name for name, value in generation_overrides.items() if value is not None]
+    active_overrides = [
+        name for name, value in generation_overrides.items() if value is not None
+    ]
     if active_overrides:
         print(f"generation overrides active: {', '.join(active_overrides)}")
     else:
@@ -297,7 +307,9 @@ def main() -> None:
             resp_dict = _default_taxbiodiversity()
             if last_err:
                 # Keep failure visibility without breaking output schema
-                resp_dict["commentary"] = (resp_dict.get("commentary", "") + f"\n\n[parse_error] {last_err}").strip()
+                resp_dict["commentary"] = (
+                    resp_dict.get("commentary", "") + f"\n\n[parse_error] {last_err}"
+                ).strip()
 
         out_jsonl_lines.append(
             json.dumps(
@@ -309,7 +321,11 @@ def main() -> None:
 
         true_class = gold_map.get(rsid, {})
         # guess_class: drop "N/A" to match existing pipeline behaviour
-        cls = (resp_dict.get("classification") or {}) if isinstance(resp_dict, dict) else {}
+        cls = (
+            (resp_dict.get("classification") or {})
+            if isinstance(resp_dict, dict)
+            else {}
+        )
         guess_class = {
             k: v for (k, v) in cls.items() if isinstance(v, str) and v != "N/A"
         }
@@ -360,4 +376,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

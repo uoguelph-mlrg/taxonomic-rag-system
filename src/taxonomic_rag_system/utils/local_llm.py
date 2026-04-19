@@ -7,6 +7,7 @@ can run without the optional local-LLM dependencies installed.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -19,11 +20,12 @@ class LocalLLMConfig:
     max_new_tokens: int | None = None
     temperature: float | None = None
     top_p: float | None = None
-    device_map: str = "auto"
+    # "auto" / HF literal / alias (e.g. cuda0); dict is forwarded to ``from_pretrained``
+    device_map: str | dict[str, Any] = "auto"
     torch_dtype: str = "auto"
     trust_remote_code: bool = True
 
-    # When True, the generated text contains ONLY the completion (not prompt+completion).
+    # When True, generated text is completion only (not prompt+completion).
     return_full_text: bool = False
 
 
@@ -32,7 +34,6 @@ def _apply_generation_defaults(
     cfg: LocalLLMConfig,
 ) -> dict[str, Any]:
     """Populate HF generation kwargs while allowing model defaults to pass through."""
-
     pk = dict(pipeline_kwargs)
 
     pk.setdefault("return_full_text", cfg.return_full_text)
@@ -53,6 +54,46 @@ def _apply_generation_defaults(
             pk.setdefault("top_p", cfg.top_p)
 
     return pk
+
+
+def normalize_device_map(device_map: str | dict[str, Any]) -> str | dict[str, Any]:
+    """Resolve ``device_map`` for ``AutoModelForCausalLM.from_pretrained``.
+
+    ``device_map="auto"`` can place some layers on CPU under memory pressure, which
+    then breaks forward passes (CUDA/CPU tensor mismatch). For a single GPU, prefer
+    ``{"": 0}`` so the full weights stay on GPU 0.
+
+    Parameters
+    ----------
+    device_map
+        Hugging Face ``device_map`` string (e.g. ``"auto"``), a JSON object string
+        parsed to a dict, or a dict. Aliases ``cuda0``, ``gpu0``, ``single``, ``0``,
+        and ``cuda:0`` map to ``{"": 0}``.
+
+    Returns
+    -------
+    str | dict[str, Any]
+        Value suitable for ``from_pretrained(..., device_map=...)``.
+    """
+    if isinstance(device_map, dict):
+        return device_map
+    s = str(device_map).strip()
+    if not s:
+        return "auto"
+    key = s.lower()
+    single_aliases = frozenset({"cuda0", "gpu0", "single", "cuda:0", "0"})
+    if key in single_aliases:
+        return {"": 0}
+    if s.startswith("{"):
+        try:
+            parsed: Any = json.loads(s)
+        except json.JSONDecodeError as e:
+            msg = f"device_map must be valid JSON when starting with '{{': {e}"
+            raise ValueError(msg) from e
+        if not isinstance(parsed, dict):
+            raise ValueError("device_map JSON must decode to an object")
+        return parsed
+    return s
 
 
 def build_hf_textgen_llm(
@@ -83,31 +124,37 @@ def build_hf_textgen_llm(
     - This uses a plain text-generation pipeline. The caller is responsible for
       providing a prompt that elicits strict JSON for downstream parsing.
     """
-
     # Lazy imports (optional dependency)
-    from transformers import (  # type: ignore[import-not-found]
+    import importlib
+
+    from transformers import (
         AutoModelForCausalLM,
         AutoTokenizer,
         pipeline,
     )
 
     try:
-        from langchain_community.llms import HuggingFacePipeline  # type: ignore[import-not-found]
+        _lc_llms = importlib.import_module("langchain_community.llms")
     except Exception:  # pragma: no cover
-        # Older/newer LangChain distributions may locate this elsewhere.
-        from langchain.llms import HuggingFacePipeline  # type: ignore[import-not-found]
+        _lc_llms = importlib.import_module("langchain.llms")
+    hf_pipeline_cls = _lc_llms.HuggingFacePipeline
 
     mk: dict[str, Any] = dict(model_kwargs or {})
     pk: dict[str, Any] = dict(pipeline_kwargs or {})
 
     tokenizer = AutoTokenizer.from_pretrained(cfg.model_id, use_fast=True)
 
-    mk.setdefault("device_map", cfg.device_map)
+    effective_dm = mk.pop("device_map", cfg.device_map)
+    resolved_dm = normalize_device_map(effective_dm)
+    mk["device_map"] = resolved_dm
     mk.setdefault("torch_dtype", cfg.torch_dtype)
     mk.setdefault("trust_remote_code", cfg.trust_remote_code)
     model = AutoModelForCausalLM.from_pretrained(cfg.model_id, **mk)
 
     pk = _apply_generation_defaults(pk, cfg)
+    # Put pipeline inputs on GPU 0 when the full model uses {"": 0}.
+    if resolved_dm == {"": 0}:
+        pk.setdefault("device", 0)
 
     gen_pipe = pipeline(
         task="text-generation",
@@ -116,5 +163,4 @@ def build_hf_textgen_llm(
         **pk,
     )
 
-    return HuggingFacePipeline(pipeline=gen_pipe)
-
+    return hf_pipeline_cls(pipeline=gen_pipe)
