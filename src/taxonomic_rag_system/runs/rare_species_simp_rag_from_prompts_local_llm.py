@@ -84,9 +84,24 @@ def _parse_arguments() -> argparse.Namespace:
         required=True,
         help="Hugging Face model id or local path for Qwen3.",
     )
-    parser.add_argument("--max-new-tokens", type=int, default=900)
-    parser.add_argument("--temperature", type=float, default=0.0)
-    parser.add_argument("--top-p", type=float, default=1.0)
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=None,
+        help="Override the model default max_new_tokens. Omit to use the model default.",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help="Override the model default temperature. Omit to use the model default.",
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=None,
+        help="Override the model default top_p. Omit to use the model default.",
+    )
     parser.add_argument("--device-map", type=str, default="auto")
     parser.add_argument("--torch-dtype", type=str, default="auto")
     parser.add_argument(

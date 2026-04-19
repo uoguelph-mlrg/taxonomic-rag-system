@@ -16,15 +16,43 @@ class LocalLLMConfig:
     """Configuration for building a local Hugging Face text-generation LLM."""
 
     model_id: str
-    max_new_tokens: int = 900
-    temperature: float = 0.0
-    top_p: float = 1.0
+    max_new_tokens: int | None = None
+    temperature: float | None = None
+    top_p: float | None = None
     device_map: str = "auto"
     torch_dtype: str = "auto"
     trust_remote_code: bool = True
 
     # When True, the generated text contains ONLY the completion (not prompt+completion).
     return_full_text: bool = False
+
+
+def _apply_generation_defaults(
+    pipeline_kwargs: dict[str, Any],
+    cfg: LocalLLMConfig,
+) -> dict[str, Any]:
+    """Populate HF generation kwargs while allowing model defaults to pass through."""
+
+    pk = dict(pipeline_kwargs)
+
+    pk.setdefault("return_full_text", cfg.return_full_text)
+    if cfg.max_new_tokens is not None:
+        pk.setdefault("max_new_tokens", cfg.max_new_tokens)
+
+    # `None` means "leave this entirely to the model's generation_config".
+    if cfg.temperature is None:
+        return pk
+
+    # HF text-generation pipelines reject temperature=0.0 even for greedy decoding.
+    # Only pass sampling-specific knobs when sampling is actually enabled.
+    do_sample = cfg.temperature > 0
+    pk.setdefault("do_sample", do_sample)
+    if do_sample:
+        pk.setdefault("temperature", cfg.temperature)
+        if cfg.top_p is not None:
+            pk.setdefault("top_p", cfg.top_p)
+
+    return pk
 
 
 def build_hf_textgen_llm(
@@ -79,13 +107,7 @@ def build_hf_textgen_llm(
     mk.setdefault("trust_remote_code", cfg.trust_remote_code)
     model = AutoModelForCausalLM.from_pretrained(cfg.model_id, **mk)
 
-    do_sample = cfg.temperature > 0
-
-    pk.setdefault("max_new_tokens", cfg.max_new_tokens)
-    pk.setdefault("do_sample", do_sample)
-    pk.setdefault("temperature", cfg.temperature)
-    pk.setdefault("top_p", cfg.top_p)
-    pk.setdefault("return_full_text", cfg.return_full_text)
+    pk = _apply_generation_defaults(pk, cfg)
 
     gen_pipe = pipeline(
         task="text-generation",
