@@ -43,6 +43,7 @@ REQUIRED_RESPONSE_KEYS = {
     "commentary",
     "bio_knowledge",
 }
+JSON_ONLY_RETRY_SUFFIX = "\n\nOutput ONLY the JSON object. Do not use markdown.\n"
 
 
 def _fmt_optional(value: Any) -> str:
@@ -153,23 +154,29 @@ def _coerce_taxbiodiversity_dict(obj: Any) -> dict[str, Any]:
     return tb.model_dump()
 
 
-def _default_taxbiodiversity() -> dict[str, Any]:
-    tb = TaxBiodiversity(
-        classification={
-            "Kingdom": "Animalia",
-            "Phylum": "N/A",
-            "Class": "N/A",
-            "Order": "N/A",
-            "Family": "N/A",
-            "Genus": "N/A",
-            "Species": "N/A",
-        },
-        ancestral="",
-        specific="",
-        commentary="",
-        bio_knowledge="",
+def _invoke_structured_taxonomy_response(llm: Any, prompt: str) -> dict[str, Any]:
+    """Run the local LLM and require a schema-valid JSON response."""
+    errors: list[str] = []
+
+    for attempt in range(2):
+        prompt_to_use = prompt
+        if attempt == 1:
+            prompt_to_use = prompt.rstrip() + JSON_ONLY_RETRY_SUFFIX
+        try:
+            raw_text = llm.invoke(prompt_to_use)
+            if not isinstance(raw_text, str):
+                raw_text = str(raw_text)
+            cleaned = _extract_outer_json_object(raw_text)
+            decoded = json.loads(cleaned)
+            return _coerce_taxbiodiversity_dict(decoded)
+        except Exception as exc:
+            errors.append(f"attempt {attempt + 1}: {exc}")
+
+    detail = " | ".join(errors) if errors else "unknown error"
+    raise RuntimeError(
+        "Local LLM inference failed after 2 attempts; refusing to emit fallback "
+        f"taxonomy. {detail}"
     )
-    return tb.model_dump()
 
 
 def main() -> None:  # noqa: PLR0912, PLR0915
@@ -280,36 +287,10 @@ def main() -> None:  # noqa: PLR0912, PLR0915
     for r in rows:
         rsid = r["rsid"]
         prompt = r["prompt"]
-
-        resp_dict: dict[str, Any] | None = None
-        last_err: str | None = None
-
-        for attempt in range(2):
-            prompt_to_use = prompt
-            if attempt == 1:
-                prompt_to_use = (
-                    prompt.rstrip()
-                    + "\n\nOutput ONLY the JSON object. Do not use markdown.\n"
-                )
-            try:
-                raw_text = llm.invoke(prompt_to_use)
-                if not isinstance(raw_text, str):
-                    raw_text = str(raw_text)
-                cleaned = _extract_outer_json_object(raw_text)
-                decoded = json.loads(cleaned)
-                resp_dict = _coerce_taxbiodiversity_dict(decoded)
-                break
-            except Exception as e:
-                last_err = str(e)
-                resp_dict = None
-
-        if resp_dict is None:
-            resp_dict = _default_taxbiodiversity()
-            if last_err:
-                # Keep failure visibility without breaking output schema
-                resp_dict["commentary"] = (
-                    resp_dict.get("commentary", "") + f"\n\n[parse_error] {last_err}"
-                ).strip()
+        try:
+            resp_dict = _invoke_structured_taxonomy_response(llm, prompt)
+        except Exception as exc:
+            raise RuntimeError(f"Failed for RSID {rsid}: {exc}") from exc
 
         out_jsonl_lines.append(
             json.dumps(
