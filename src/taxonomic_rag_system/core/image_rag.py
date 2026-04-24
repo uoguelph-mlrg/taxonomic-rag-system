@@ -110,17 +110,23 @@ class ImageRAGModel:
         multiquery: bool = False,
         cap: Optional[AsyncOpenAI] = None,
         model: str = "gpt-4o",
+        captioner: Any | None = None,
+        rag_llm: Any | None = None,
+        rag_llm_generation_kwargs: dict[str, Any] | None = None,
         prompt_log_path: Optional[str] = None,
         logprobs_log_path: Optional[str] = None,
     ):
-        load_api_keys()
-        if cap is None:
-            cap = AsyncOpenAI()
         self.image_processor = ImageProcessor()
-        self.captioner = DescriptiveCaptioner(
-            cap=cap,
-            model=model,
-        )
+        if captioner is not None:
+            self.captioner = captioner
+        else:
+            load_api_keys(openai=True)
+            if cap is None:
+                cap = AsyncOpenAI()
+            self.captioner = DescriptiveCaptioner(
+                cap=cap,
+                model=model,
+            )
         self.rag_model = WikiStellaRAGModel(
             vstore_path=vstore_path,
             collection_name=collection_name,
@@ -129,6 +135,8 @@ class ImageRAGModel:
             k=k,
             rerank=rerank,
             multiquery=multiquery,
+            llm=rag_llm,
+            llm_generation_kwargs=rag_llm_generation_kwargs,
             log_path=prompt_log_path,
             logprobs_path=logprobs_log_path,
         )
@@ -380,7 +388,7 @@ class NaiveVLModel:
         model: str = "google/gemini-2.0-flash-001",
         openrouter: bool = True,
     ):
-        load_api_keys()
+        load_api_keys(openai=not openrouter, openrouter=openrouter)
         cap = AsyncOpenAI() if not openrouter else None
         self.image_processor = ImageProcessor()
         self.model = TaxClassifierVLM(model=model, cap=cap)

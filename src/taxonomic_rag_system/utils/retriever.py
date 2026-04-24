@@ -25,8 +25,10 @@ Dependencies:
 
 import asyncio
 import hashlib
+import json  # For saving prompt/response pairs
 import logging
 import traceback
+from pathlib import Path  # Handle log file paths
 from typing import Any, Union, overload
 
 import torch
@@ -40,8 +42,6 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableSerializable
 from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_openai import ChatOpenAI
-import json  # For saving prompt/response pairs
-from pathlib import Path  # Handle log file paths
 
 # Local imports
 from taxonomic_rag_system.utils.helpers import format_docs, load_api_keys, unique_docs
@@ -54,6 +54,7 @@ logger = logging.getLogger(__name__)
 
 # Fixed seed for LLM requests (reproducibility/audit)
 DEFAULT_LLM_SEED: int = 12345
+JSON_ONLY_RETRY_SUFFIX = "\n\nOutput ONLY the JSON object. Do not use markdown.\n"
 
 
 class SafeHuggingFaceEmbeddings(HuggingFaceEmbeddings):
@@ -160,7 +161,7 @@ class RAGChainBuilder:
         )
         self.prompt = self._prompt_construction()
         self.rag_chain = self._build_chain(retriever)
-        # Optional path to save prompt/response pairs in JSONL format; disabled by default
+        # Optional path to save prompt/response pairs in JSONL; disabled by default.
         self._log_path: str | None = str(log_path) if log_path else None
         # Optional path to save token-level logprobs JSONL aligned by rsid
         self._logprobs_path: str | None = str(logprobs_path) if logprobs_path else None
@@ -170,7 +171,7 @@ class RAGChainBuilder:
         self._enable_json_mode: bool = isinstance(self.llm, ChatOpenAI)
         # Store retriever for possible prompt reconstruction/logging
         self._retriever = retriever
-    
+
     def _prompt_construction(self) -> PromptTemplate:
         """
         Construct the prompt template required for taxonomic classification tasks.
@@ -200,17 +201,45 @@ class RAGChainBuilder:
             | self.output_parser
         )
 
-    def invoke(self, inp: dict[str, Any]) -> TaxBiodiversity:
-        """
-        Invoke the RAG chain synchronously with the given input.
+    def format_prompt(self, *, context: str, caption: str) -> str:
+        """Format the final classification prompt string."""
+        return self.prompt.format(context=context, caption=caption)
 
-        :param inp: The input data.
-        :return: The output of the RAG chain.
-        """
-        # Prompt/Response logging
-        # Use only required keys for formatting to avoid extra keys issues
-        prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
-        prompt_str = self.prompt.format(**prompt_inputs)
+    @staticmethod
+    def _coerce_raw_text(raw: Any) -> str:
+        """Extract plain text from runnable outputs."""
+        if isinstance(raw, str):
+            return raw
+        raw_text = getattr(raw, "content", None)
+        if raw_text is None:
+            raw_text = str(raw)
+        return raw_text
+
+    @staticmethod
+    def _extract_outer_json_object(text: str) -> str:
+        """Best-effort extraction of the outermost JSON object."""
+        s = text.strip()
+        if s.startswith("```"):
+            parts = s.split("```")
+            if len(parts) >= 3:
+                s = parts[1].strip()
+        lb = s.find("{")
+        rb = s.rfind("}")
+        if lb != -1 and rb != -1 and rb > lb:
+            return s[lb : rb + 1]
+        return s
+
+    def _parse_taxbiodiversity(self, raw_text: str) -> TaxBiodiversity:
+        """Parse a model response into the TaxBiodiversity schema."""
+        try:
+            return self.output_parser.invoke(raw_text)
+        except Exception:
+            cleaned = self._extract_outer_json_object(raw_text)
+            decoded = json.loads(cleaned)
+            return TaxBiodiversity.model_validate(decoded)
+
+    def _bind_llm(self) -> Any:
+        """Bind generation kwargs onto the active LLM when supported."""
         llm_to_use: Any = self.llm
         bind_kwargs: dict[str, Any] = dict(self._llm_generation_kwargs)
         if self._enable_json_mode:
@@ -221,17 +250,57 @@ class RAGChainBuilder:
             bind_kwargs.setdefault("seed", DEFAULT_LLM_SEED)
         if bind_kwargs and hasattr(llm_to_use, "bind"):
             llm_to_use = llm_to_use.bind(**bind_kwargs)
-        gen = self.prompt | llm_to_use
+        return llm_to_use
 
-        raw = gen.invoke(input=inp)
-        if isinstance(raw, str):
-            raw_text = raw
-        else:
-            raw_text = getattr(raw, "content", None)
-            if raw_text is None:
-                raw_text = str(raw)
+    def _invoke_llm_sync(self, prompt_str: str) -> tuple[Any, str]:
+        """Invoke the configured LLM synchronously."""
+        llm_to_use = self._bind_llm()
+        raw = llm_to_use.invoke(prompt_str)
+        return raw, self._coerce_raw_text(raw)
 
-        result = self.output_parser.invoke(raw_text)
+    async def _invoke_llm_async(self, prompt_str: str) -> tuple[Any, str]:
+        """Asynchronously invoke the configured LLM."""
+        llm_to_use = self._bind_llm()
+        try:
+            raw = await llm_to_use.ainvoke(prompt_str)
+        except (NotImplementedError, AttributeError):
+            raw = await asyncio.to_thread(llm_to_use.invoke, prompt_str)
+        return raw, self._coerce_raw_text(raw)
+
+    def _invoke_with_retry_sync(self, prompt_str: str) -> tuple[Any, TaxBiodiversity]:
+        """Invoke the LLM and retry once with stricter JSON instructions."""
+        raw, raw_text = self._invoke_llm_sync(prompt_str)
+        try:
+            return raw, self._parse_taxbiodiversity(raw_text)
+        except Exception:
+            retry_prompt = prompt_str.rstrip() + JSON_ONLY_RETRY_SUFFIX
+            retry_raw, retry_text = self._invoke_llm_sync(retry_prompt)
+            return retry_raw, self._parse_taxbiodiversity(retry_text)
+
+    async def _invoke_with_retry_async(
+        self, prompt_str: str
+    ) -> tuple[Any, TaxBiodiversity]:
+        """Invoke the LLM asynchronously and retry once with stricter JSON output."""
+        raw, raw_text = await self._invoke_llm_async(prompt_str)
+        try:
+            return raw, self._parse_taxbiodiversity(raw_text)
+        except Exception:
+            retry_prompt = prompt_str.rstrip() + JSON_ONLY_RETRY_SUFFIX
+            retry_raw, retry_text = await self._invoke_llm_async(retry_prompt)
+            return retry_raw, self._parse_taxbiodiversity(retry_text)
+
+    def invoke(self, inp: dict[str, Any]) -> TaxBiodiversity:
+        """
+        Invoke the RAG chain synchronously with the given input.
+
+        :param inp: The input data.
+        :return: The output of the RAG chain.
+        """
+        # Prompt/Response logging
+        # Use only required keys for formatting to avoid extra keys issues
+        prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
+        prompt_str = self.format_prompt(**prompt_inputs)
+        raw, result = self._invoke_with_retry_sync(prompt_str)
         # Log prompt/response pair with optional RSID
         self._log_pair(prompt_str, result, rsid=inp.get("RSID"))
         # Also write logprobs JSONL if configured and supported by the LLM backend
@@ -249,32 +318,8 @@ class RAGChainBuilder:
         try:
             # Prompt/Response logging parity with sync invoke
             prompt_inputs = {k: inp[k] for k in ("context", "caption") if k in inp}
-            prompt_str = self.prompt.format(**prompt_inputs)
-            llm_to_use: Any = self.llm
-            bind_kwargs: dict[str, Any] = dict(self._llm_generation_kwargs)
-            if self._enable_json_mode:
-                bind_kwargs.setdefault("response_format", {"type": "json_object"})
-            if self._enable_logprobs:
-                bind_kwargs.setdefault("logprobs", True)
-                bind_kwargs.setdefault("top_logprobs", 20)
-                bind_kwargs.setdefault("seed", DEFAULT_LLM_SEED)
-            if bind_kwargs and hasattr(llm_to_use, "bind"):
-                llm_to_use = llm_to_use.bind(**bind_kwargs)
-            gen = self.prompt | llm_to_use
-
-            try:
-                raw = await gen.ainvoke(input=inp)
-            except (NotImplementedError, AttributeError):
-                raw = await asyncio.to_thread(gen.invoke, inp)
-
-            if isinstance(raw, str):
-                raw_text = raw
-            else:
-                raw_text = getattr(raw, "content", None)
-                if raw_text is None:
-                    raw_text = str(raw)
-
-            result = self.output_parser.invoke(raw_text)
+            prompt_str = self.format_prompt(**prompt_inputs)
+            raw, result = await self._invoke_with_retry_async(prompt_str)
             # Log prompt/response pair
             self._log_pair(prompt_str, result, rsid=inp.get("RSID"))
             # Also write logprobs JSONL if configured and supported
@@ -303,7 +348,7 @@ class RAGChainBuilder:
                 commentary="Error occurred during processing",
                 bio_knowledge="Error occurred during processing",
             )
-    
+
     def _log_pair(self, prompt: str, response: Any, rsid: str | None = None) -> None:
         """Append a prompt/response pair to the configured JSONL log file (if any).
 
@@ -325,8 +370,11 @@ class RAGChainBuilder:
                 resp_obj = str(response)
 
             with open(self._log_path, "a", encoding="utf-8") as fp:
-                # Keep lowercase 'rsid' as the first key, followed by 'prompt' and 'response'
-                json_line = json.dumps({"rsid": rsid, "prompt": prompt, "response": resp_obj}, ensure_ascii=False)
+                # Keep lowercase 'rsid' as the first key for downstream loaders.
+                json_line = json.dumps(
+                    {"rsid": rsid, "prompt": prompt, "response": resp_obj},
+                    ensure_ascii=False,
+                )
                 fp.write(json_line + "\n")
         except Exception as log_err:
             # Do not crash the main pipeline for logging errors; just warn.
@@ -463,7 +511,7 @@ class RAGChainBuilder:
                 j += 1
                 while j < len(raw) and raw[j] in " \t\r\n":
                     j += 1
-                if j >= len(raw) or raw[j] != '{':
+                if j >= len(raw) or raw[j] != "{":
                     return None
                 # Brace matching with string awareness
                 depth = 0
@@ -483,9 +531,9 @@ class RAGChainBuilder:
                         in_str = True
                         p += 1
                         continue
-                    if ch == '{':
+                    if ch == "{":
                         depth += 1
-                    elif ch == '}':
+                    elif ch == "}":
                         depth -= 1
                         if depth == 0:
                             return (j, p + 1)
@@ -590,6 +638,8 @@ class WikiStellaRAGModel(BaseRetriever):
         k: int = 30,
         rerank: bool = False,
         multiquery: bool = False,
+        llm: Any | None = None,
+        llm_generation_kwargs: dict[str, Any] | None = None,
         log_path: str | None = None,
         logprobs_path: str | None = None,
     ) -> None:
@@ -616,7 +666,10 @@ class WikiStellaRAGModel(BaseRetriever):
             search_type=search_type,
             k=k,
         )
-        load_api_keys()
+        if multiquery:
+            load_api_keys(openai=True)
+        if rerank:
+            load_api_keys(cohere=True)
         self.vectorstore = self._set_up_retriever(vstore_path)
         self.base_retriever = self.vectorstore.as_retriever(
             search_type=self.search_type, search_kwargs={"k": self.k}
@@ -626,7 +679,25 @@ class WikiStellaRAGModel(BaseRetriever):
             self._add_multiquery()
         if rerank:
             self._add_reranker()
-        self.model = RAGChainBuilder(self.retriever, log_path=log_path, logprobs_path=logprobs_path)
+        self.model = RAGChainBuilder(
+            self.retriever,
+            llm=llm,
+            llm_generation_kwargs=llm_generation_kwargs,
+            log_path=log_path,
+            logprobs_path=logprobs_path,
+        )
+
+    @staticmethod
+    def _build_input(
+        caption: str,
+        formatted_docs: str,
+        rsid: str | None = None,
+    ) -> dict[str, str]:
+        """Build the chain input dict for a caption and retrieved context."""
+        inp = {"context": formatted_docs, "caption": caption}
+        if rsid is not None:
+            inp["RSID"] = rsid
+        return inp
 
     def _set_up_retriever(self, vstore_path: str) -> Chroma:
         """
@@ -752,9 +823,7 @@ class WikiStellaRAGModel(BaseRetriever):
         # Format the retrieved documents
         formatted_docs = format_docs(docs)
         # Create the input for the RAG model
-        inp = {"context": formatted_docs, "caption": caption}
-        if RSID is not None:
-            inp["RSID"] = RSID
+        inp = self._build_input(caption, formatted_docs, RSID)
         # Invoke RAG model and return results
         return self.model.invoke(inp=inp)
 
@@ -770,8 +839,6 @@ class WikiStellaRAGModel(BaseRetriever):
         # Format the retrieved documents
         formatted_docs = format_docs(docs)
         # Create the input for the RAG model
-        inp = {"context": formatted_docs, "caption": caption}
-        if RSID is not None:
-            inp["RSID"] = RSID
+        inp = self._build_input(caption, formatted_docs, RSID)
         # Invoke RAG model and return results
         return await self.model.ainvoke(inp=inp)

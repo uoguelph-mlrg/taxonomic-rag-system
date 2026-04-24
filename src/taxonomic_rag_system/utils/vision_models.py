@@ -81,7 +81,7 @@ class InstructorVLModel(VLM):
 
     def __init__(self, cap: Any, model: str, temp: float) -> None:
         super().__init__(cap, model, temp)
-        load_api_keys()
+        load_api_keys(openai=True)
         self.client = instructor.from_openai(self.cap)
 
 
@@ -107,7 +107,7 @@ class TaxClassifierVLM(VLM):
     """
 
     def __init__(self, cap: Any = None, model: str = "", temp: float = 0) -> None:
-        load_api_keys()
+        load_api_keys(openrouter=True)
         if cap is None:
             cap = AsyncOpenAI(
                 base_url="https://openrouter.ai/api/v1",

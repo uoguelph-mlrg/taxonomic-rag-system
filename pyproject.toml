@@ -31,6 +31,19 @@ gpu = [
     "torchvision==0.21.0+cu118",
 ]
 
+local-llm = [
+    "accelerate>=0.26.0",
+    "datasets>=3.0.0",
+    "safetensors>=0.5.3",
+    "transformers>=4.49.0",
+]
+
+local-vlm = [
+    "accelerate>=0.26.0",
+    "qwen-vl-utils>=0.0.8",
+    "transformers>=4.49.0",
+]
+
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"

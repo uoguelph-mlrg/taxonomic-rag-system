@@ -78,40 +78,86 @@ RANKS = ["Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"]
 RANK_TO_IDX = {rank: i + 1 for i, rank in enumerate(RANKS)}
 
 
-def load_api_keys() -> None:
-    """Load API keys from files.
+def _load_key_from_home(
+    filename: str,
+    env_var: str,
+    *,
+    required: bool,
+    missing_message: str,
+) -> None:
+    """Load an API key from the home directory into the environment."""
+    try:
+        with open(Path.home() / filename, "r") as f:
+            os.environ[env_var] = f.read().strip()
+    except FileNotFoundError:
+        if required:
+            raise FileNotFoundError(missing_message) from None
+        print(missing_message)
 
-    OpenAI API key is required, OpenRouter and Cohere API keys are optional.
-    Read API keys from files in home dir - `~/.openai.key`,
-    `~/.openrouter.key` and `~/.cohere.key`.
+
+def load_api_keys(
+    *,
+    openai: bool | None = None,
+    openrouter: bool | None = None,
+    cohere: bool | None = None,
+) -> None:
+    """Load only the API keys required by the active workflow.
+
+    Parameters
+    ----------
+    openai
+        Whether the caller requires an OpenAI key. ``None`` preserves the legacy
+        behavior where the OpenAI key is required.
+    openrouter
+        Whether the caller requires an OpenRouter key. ``None`` preserves the
+        legacy behavior where the key is loaded opportunistically and only emits a
+        warning when missing.
+    cohere
+        Whether the caller requires a Cohere key. ``None`` preserves the legacy
+        behavior where the key is loaded opportunistically and only emits a warning
+        when missing.
     """
-    try:
-        with open(Path.home() / ".openai.key", "r") as f:
-            os.environ["OPENAI_API_KEY"] = f.read().strip()
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            "Could not find OpenAI API key at ~/.openai.key. "
-            "This key is required for the model to function."
-        ) from None
+    require_openai = True if openai is None else openai
+    require_openrouter = False if openrouter is None else openrouter
+    require_cohere = False if cohere is None else cohere
 
-    try:
-        with open(Path.home() / ".openrouter.key", "r") as f:
-            os.environ["OPENROUTER_API_KEY"] = f.read().strip()
-    except FileNotFoundError:
-        # OpenRouter key is optional, only log a warning
-        print(
-            "Warning: Could not find OpenRouter API key at ~/.openrouter.key. "
-            "This is fine if you're not using OpenRouter models."
+    if openai is not False:
+        _load_key_from_home(
+            ".openai.key",
+            "OPENAI_API_KEY",
+            required=require_openai,
+            missing_message=(
+                "Could not find OpenAI API key at ~/.openai.key. "
+                "This key is required for the model to function."
+            ),
         )
 
-    try:
-        with open(Path.home() / ".cohere.key", "r") as f:
-            os.environ["COHERE_API_KEY"] = f.read().strip()
-    except FileNotFoundError:
-        # Cohere key is optional, only log a warning
-        print(
-            "Warning: Could not find Cohere API key at ~/.cohere.key. "
-            "This is fine if you're not using reranking functionality."
+    if openrouter is not False:
+        _load_key_from_home(
+            ".openrouter.key",
+            "OPENROUTER_API_KEY",
+            required=require_openrouter,
+            missing_message=(
+                "Warning: Could not find OpenRouter API key at ~/.openrouter.key. "
+                "This is fine if you're not using OpenRouter models."
+                if not require_openrouter
+                else "Could not find OpenRouter API key at ~/.openrouter.key. "
+                "This key is required for the model to function."
+            ),
+        )
+
+    if cohere is not False:
+        _load_key_from_home(
+            ".cohere.key",
+            "COHERE_API_KEY",
+            required=require_cohere,
+            missing_message=(
+                "Warning: Could not find Cohere API key at ~/.cohere.key. "
+                "This is fine if you're not using reranking functionality."
+                if not require_cohere
+                else "Could not find Cohere API key at ~/.cohere.key. "
+                "This key is required for reranking functionality."
+            ),
         )
 
 

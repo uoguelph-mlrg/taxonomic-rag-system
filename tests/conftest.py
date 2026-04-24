@@ -16,6 +16,7 @@ Fixtures:
 """
 
 import os
+import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -28,7 +29,7 @@ from taxonomic_rag_system.utils.out_models import TaxBiodiversity
 def mock_api_keys(monkeypatch):
     """Automatically mock API keys for all tests."""
 
-    def mock_load_api_keys():
+    def mock_load_api_keys(*args, **kwargs):
         os.environ["OPENAI_API_KEY"] = "test-openai-key"
         os.environ["OPENROUTER_API_KEY"] = "test-openrouter-key"
         os.environ["COHERE_API_KEY"] = "test-cohere-key"
@@ -36,15 +37,14 @@ def mock_api_keys(monkeypatch):
     monkeypatch.setattr(
         "taxonomic_rag_system.utils.helpers.load_api_keys", mock_load_api_keys
     )
-    monkeypatch.setattr(
-        "taxonomic_rag_system.core.image_rag.load_api_keys", mock_load_api_keys
-    )
-    monkeypatch.setattr(
-        "taxonomic_rag_system.utils.retriever.load_api_keys", mock_load_api_keys
-    )
-    monkeypatch.setattr(
-        "taxonomic_rag_system.utils.vision_models.load_api_keys", mock_load_api_keys
-    )
+    for module_name in (
+        "taxonomic_rag_system.core.image_rag",
+        "taxonomic_rag_system.utils.retriever",
+        "taxonomic_rag_system.utils.vision_models",
+    ):
+        module = sys.modules.get(module_name)
+        if module is not None:
+            monkeypatch.setattr(module, "load_api_keys", mock_load_api_keys, raising=False)
     # Also set the environment variables directly for any code that checks them
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
