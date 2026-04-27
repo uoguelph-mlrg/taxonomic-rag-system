@@ -1,4 +1,4 @@
-"""Generate rare-species captions using a vec-inf deployed VLM endpoint."""
+"""Generate rare-species captions using an OpenAI-compatible remote VLM endpoint."""
 
 from __future__ import annotations
 
@@ -23,10 +23,24 @@ def _utc_now() -> str:
 
 def _parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Caption rare-species images with a remote vec-inf VLM endpoint.",
+        description=(
+            "Caption rare-species images via a remote OpenAI-compatible VLM "
+            "(non-empty --base-url required; Slurm stage writes it from "
+            "state/vlm_base_url.txt)."
+        ),
     )
-    parser.add_argument("--server-job-id", type=str, default="")
-    parser.add_argument("--base-url", type=str, default="")
+    parser.add_argument(
+        "--server-job-id",
+        type=str,
+        default="",
+        help="Optional Slurm job id of the model server (metadata only).",
+    )
+    parser.add_argument(
+        "--base-url",
+        type=str,
+        default="",
+        help="Required OpenAI-compatible API base URL (e.g. from vlm_base_url.txt).",
+    )
     parser.add_argument("--model", type=str, default=DEFAULT_MODEL)
     parser.add_argument("--output-jsonl", type=str, required=True)
     parser.add_argument("--metadata-json", type=str, required=True)
@@ -40,23 +54,16 @@ def _parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _resolve_base_url(base_url: str, server_job_id: str) -> str:
-    """Resolve the VLM endpoint URL, waiting on vec-inf if needed."""
-    if base_url:
-        return base_url
-    if not server_job_id:
-        msg = "Either --base-url or --server-job-id must be provided."
-        raise ValueError(msg)
-
-    from vec_inf.client import VecInfClient
-
-    client = VecInfClient()
-    status = client.wait_until_ready(slurm_job_id=server_job_id)
-    resolved = getattr(status, "base_url", "")
+def _require_base_url(base_url: str) -> str:
+    """Return stripped OpenAI-compatible endpoint URL; must be non-empty."""
+    resolved = (base_url or "").strip()
     if not resolved:
-        msg = f"vec-inf server job {server_job_id} did not provide a base_url."
-        raise RuntimeError(msg)
-    return str(resolved)
+        msg = (
+            "Non-empty --base-url is required (e.g. from state/vlm_base_url.txt "
+            "after a successful vec-inf Stage 1)."
+        )
+        raise ValueError(msg)
+    return resolved
 
 
 def _true_class(class_dict: dict[str, Any]) -> dict[str, Any]:
@@ -140,7 +147,7 @@ async def run_captioning(args: argparse.Namespace) -> dict[str, Any]:
     metadata_json.parent.mkdir(parents=True, exist_ok=True)
 
     started_at = _utc_now()
-    base_url = _resolve_base_url(args.base_url, args.server_job_id)
+    base_url = _require_base_url(args.base_url)
     metadata: dict[str, Any] = {
         "model": args.model,
         "server_job_id": args.server_job_id,

@@ -60,6 +60,32 @@ async def test_remote_vlm_captioner_sends_openai_multimodal_request(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_caption_runner_requires_non_empty_base_url(tmp_path):
+    """The caption runner must not start without an explicit endpoint URL."""
+    from taxonomic_rag_system.runs import rare_species_caption_vecinf_vlm as runner
+
+    output_jsonl = tmp_path / "captions.jsonl"
+    metadata_json = tmp_path / "metadata.json"
+    args = argparse.Namespace(
+        server_job_id="12345",
+        base_url="",
+        model="Qwen2.5-VL-7B-Instruct",
+        output_jsonl=str(output_jsonl),
+        metadata_json=str(metadata_json),
+        interval_start=0,
+        interval_end=1,
+        batch_size=1,
+        max_tokens=1024,
+        temperature=None,
+        api_key="EMPTY",
+        resume=False,
+    )
+
+    with pytest.raises(ValueError, match="--base-url"):
+        await runner.run_captioning(args)
+
+
+@pytest.mark.asyncio
 async def test_caption_runner_writes_jsonl_with_rsid_and_caption(tmp_path, monkeypatch):
     """The caption-only runner should write one RAG-ready JSONL record per sample."""
     from taxonomic_rag_system.runs import rare_species_caption_vecinf_vlm as runner
