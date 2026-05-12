@@ -39,7 +39,9 @@ event loop to execute its methods.
 """
 
 import asyncio
+import base64
 import gc
+from io import BytesIO
 from typing import Any, Optional, TypedDict, Union
 
 import torch
@@ -55,8 +57,14 @@ from taxonomic_rag_system.utils.out_models import TaxBiodiversity
 from taxonomic_rag_system.utils.retriever import WikiStellaRAGModel
 from taxonomic_rag_system.utils.vision_models import (
     DescriptiveCaptioner,
+    Qwen3VLDescriptiveCaptionerLocal,
     TaxClassifierVLM,
 )
+
+try:
+    from PIL import Image
+except Exception:  # pragma: no cover
+    Image = Any  # type: ignore[assignment]
 
 
 class _QueryImageOutput(TypedDict):
@@ -110,17 +118,46 @@ class ImageRAGModel:
         multiquery: bool = False,
         cap: Optional[AsyncOpenAI] = None,
         model: str = "gpt-4o",
+        caption_backend: str = "openai",
+        caption_model_id: str = "Qwen/Qwen3-VL-8B-Instruct",
+        caption_device_map: str = "cuda0",
+        caption_torch_dtype: str = "auto",
+        caption_attn_implementation: str = "sdpa",
+        caption_trust_remote_code: bool = False,
+        caption_max_new_tokens: int = 512,
+        caption_temperature: float = 0.0,
+        caption_top_p: float = 1.0,
+        caption_do_sample: bool = False,
         prompt_log_path: Optional[str] = None,
         logprobs_log_path: Optional[str] = None,
     ):
         load_api_keys()
-        if cap is None:
-            cap = AsyncOpenAI()
         self.image_processor = ImageProcessor()
-        self.captioner = DescriptiveCaptioner(
-            cap=cap,
-            model=model,
-        )
+        self.caption_backend = caption_backend
+        if caption_backend == "openai":
+            if cap is None:
+                cap = AsyncOpenAI()
+            self.captioner: Any = DescriptiveCaptioner(
+                cap=cap,
+                model=model,
+            )
+        elif caption_backend == "qwen3_vl_local":
+            self.captioner = Qwen3VLDescriptiveCaptionerLocal(
+                model_id=caption_model_id,
+                device_map=caption_device_map,
+                torch_dtype=caption_torch_dtype,
+                attn_implementation=caption_attn_implementation,
+                trust_remote_code=caption_trust_remote_code,
+                max_new_tokens=caption_max_new_tokens,
+                temperature=caption_temperature,
+                top_p=caption_top_p,
+                do_sample=caption_do_sample,
+            )
+        else:
+            raise ValueError(
+                f"Unsupported caption_backend={caption_backend!r}. "
+                "Use 'openai' or 'qwen3_vl_local'."
+            )
         self.rag_model = WikiStellaRAGModel(
             vstore_path=vstore_path,
             collection_name=collection_name,
@@ -132,6 +169,13 @@ class ImageRAGModel:
             log_path=prompt_log_path,
             logprobs_path=logprobs_log_path,
         )
+
+    @staticmethod
+    def _b64_to_pil_rgb(image_b64: str) -> Image.Image:
+        """Decode a base64-encoded image into a PIL RGB image."""
+        raw = base64.b64decode(image_b64.encode("utf-8"))
+        img = Image.open(BytesIO(raw))
+        return img.convert("RGB")
 
     def get_device(self) -> torch.device:
         """
@@ -181,10 +225,20 @@ class ImageRAGModel:
                        providing a default output structure.
         """
         try:
-            image_b64 = self.image_processor.process_image(
-                image_url=image_url, image_obj=image_obj, image_path=image_path
-            )
-            caption = await self.captioner.generate_caption(image_b64)
+            if self.caption_backend == "openai":
+                image_b64 = self.image_processor.process_image(
+                    image_url=image_url, image_obj=image_obj, image_path=image_path
+                )
+                caption = await self.captioner.generate_caption(image_b64)
+            else:
+                if image_obj is None:
+                    image_b64 = self.image_processor.process_image(
+                        image_url=image_url, image_obj=None, image_path=image_path
+                    )
+                    pil_img = self._b64_to_pil_rgb(image_b64)
+                else:
+                    pil_img = image_obj
+                caption = await asyncio.to_thread(self.captioner.generate_caption, pil_img)
             if verbose > 0:
                 print("querying...")
             results = await self.rag_model.ainvoke(caption=caption, RSID=rsid)
@@ -245,7 +299,10 @@ class ImageRAGModel:
         image_b64 = self.image_processor.process_image(
             image_url=image_url, image_obj=image_obj, image_path=image_path
         )
-        return await self.captioner.generate_caption(image_b64)
+        if self.caption_backend == "openai":
+            return await self.captioner.generate_caption(image_b64)
+        pil_img = self._b64_to_pil_rgb(image_b64) if image_obj is None else image_obj
+        return await asyncio.to_thread(self.captioner.generate_caption, pil_img)
 
     async def rarespecies_dataset_run(
         self, interval: tuple[int, int] = (0, 999), verbose: int = 1

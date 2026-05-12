@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "backoff>=2.2.1",
     "chromadb>=1.0.12",
+    "datasets>=4.0.0",
     "instructor>=1.7.9",
     "pillow>=11.2.1",
     "pydantic>=2.11.3",
@@ -29,6 +30,13 @@ cpu = [
 gpu = [
     "torch==2.6.0+cu118",
     "torchvision==0.21.0+cu118",
+]
+
+# Local multimodal VLM inference (e.g., Qwen3-VL)
+vlm = [
+    "accelerate>=1.0.0",
+    "safetensors>=0.5.0",
+    "transformers>=4.50.0",
 ]
 
 [[tool.uv.index]]

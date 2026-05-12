@@ -33,7 +33,7 @@ detailed caption generation functionalities depending on the model used.
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, Optional
 
 import instructor
 from openai import AsyncOpenAI
@@ -42,6 +42,11 @@ from taxonomic_rag_system.utils.helpers import load_api_keys
 
 # Local imports
 from taxonomic_rag_system.utils.out_models import Caption, Tax
+
+try:
+    from PIL import Image
+except Exception:  # pragma: no cover
+    Image = Any  # type: ignore[assignment]
 
 
 # Configure logging
@@ -328,3 +333,163 @@ class DescriptiveCaptioner(InstructorVLModel):
         )
         assert isinstance(raw_resp, Caption)
         return raw_resp.caption
+
+
+class Qwen3VLDescriptiveCaptionerLocal:
+    """Generate detailed captions with a local Qwen3-VL model (HF Transformers).
+
+    This class is intentionally synchronous because HF generation APIs are sync; call
+    it via `asyncio.to_thread(...)` from async code paths when needed.
+    """
+
+    def __init__(
+        self,
+        model_id: str = "Qwen/Qwen3-VL-8B-Instruct",
+        *,
+        device_map: str = "cuda0",
+        torch_dtype: str = "auto",
+        attn_implementation: str = "sdpa",
+        trust_remote_code: bool = False,
+        max_new_tokens: int = 512,
+        temperature: float = 0.0,
+        top_p: float = 1.0,
+        do_sample: bool = False,
+        prompt: Optional[str] = None,
+    ) -> None:
+        self.model_id = model_id
+        self.device_map = device_map
+        self.torch_dtype = torch_dtype
+        self.attn_implementation = attn_implementation
+        self.trust_remote_code = trust_remote_code
+
+        self.max_new_tokens = int(max_new_tokens)
+        self.temperature = float(temperature)
+        self.top_p = float(top_p)
+        self.do_sample = bool(do_sample)
+
+        # Reuse the core intent of the OpenAI caption prompt.
+        self.prompt = prompt or (
+            "Write an exhaustive and extremely detailed caption for the organism(s) "
+            "in this image, describing every observable morphological feature "
+            "(body/head shape, appendages, colour pattern, texture, wings, antennae, "
+            "eyes, segmentation, etc.) and the surrounding environmental context. "
+            "Avoid emotional or non-visible descriptors; rely only on visual cues. "
+            "Avoid common names; prefer scientific descriptions. Aim for at least 7 "
+            "sentences, with no upper limit if detail demands it."
+        )
+
+        self._model: Any | None = None
+        self._processor: Any | None = None
+
+    def _lazy_load(self) -> None:
+        if self._model is not None and self._processor is not None:
+            return
+
+        try:
+            import torch
+            from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+        except Exception as exc:  # pragma: no cover
+            raise RuntimeError(
+                "Missing local VLM dependencies. Install with "
+                "`uv sync --extra vlm` (and --extra gpu if applicable)."
+            ) from exc
+
+        dtype_obj: Any
+        if self.torch_dtype in ("auto", "", None):  # type: ignore[comparison-overlap]
+            dtype_obj = "auto"
+        else:
+            dt = str(self.torch_dtype).lower()
+            if dt in ("bf16", "bfloat16"):
+                dtype_obj = torch.bfloat16
+            elif dt in ("fp16", "float16", "half"):
+                dtype_obj = torch.float16
+            elif dt in ("fp32", "float32"):
+                dtype_obj = torch.float32
+            else:
+                raise ValueError(f"Unsupported torch_dtype: {self.torch_dtype!r}")
+
+        self._model = Qwen3VLForConditionalGeneration.from_pretrained(
+            self.model_id,
+            device_map=self.device_map,
+            torch_dtype=dtype_obj,
+            attn_implementation=self.attn_implementation,
+            trust_remote_code=bool(self.trust_remote_code),
+        )
+        self._processor = AutoProcessor.from_pretrained(
+            self.model_id, trust_remote_code=bool(self.trust_remote_code)
+        )
+
+    def generate_caption(self, image: Image.Image) -> str:
+        """Generate a caption from a PIL image."""
+        self._lazy_load()
+        assert self._model is not None
+        assert self._processor is not None
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image},
+                    {"type": "text", "text": self.prompt},
+                ],
+            }
+        ]
+
+        inputs = self._processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pt",
+        )
+        # Some processors include token_type_ids which the model may not accept.
+        try:
+            inputs.pop("token_type_ids", None)
+        except Exception:
+            pass
+
+        # Best-effort device placement for the common single-GPU case.
+        try:
+            import torch
+
+            model_device = getattr(self._model, "device", None)
+            if model_device is not None and str(model_device) != "meta":
+                for k, v in list(inputs.items()):
+                    if isinstance(v, torch.Tensor):
+                        inputs[k] = v.to(model_device)
+        except Exception:
+            # If device_map is complex, rely on HF internals.
+            pass
+
+        gen_kwargs: dict[str, Any] = {
+            "max_new_tokens": self.max_new_tokens,
+        }
+        # Only enable sampling knobs when do_sample is requested.
+        if self.do_sample:
+            gen_kwargs.update(
+                {
+                    "do_sample": True,
+                    "temperature": self.temperature,
+                    "top_p": self.top_p,
+                }
+            )
+
+        generated_ids = self._model.generate(**inputs, **gen_kwargs)
+        # Trim the prompt tokens.
+        input_ids = inputs.get("input_ids")
+        if input_ids is not None:
+            generated_ids = [
+                out_ids[len(in_ids) :] for in_ids, out_ids in zip(input_ids, generated_ids)
+            ]
+        out = self._processor.batch_decode(
+            generated_ids,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+        # batch_decode may return list[str] or list[list[str]] depending on tokenizer.
+        if not out:
+            return ""
+        first = out[0]
+        if isinstance(first, list):
+            return first[0] if first else ""
+        return str(first)
