@@ -12,6 +12,8 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import sys
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -83,6 +85,7 @@ def _load_done_rsids(path: Path) -> set[str]:
 
 
 def main() -> None:
+    """Run the Qwen3-VL caption loop and append one JSONL record per sample."""
     args = _parse_args()
     out_path = Path(args.output_jsonl).expanduser()
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -161,6 +164,13 @@ def main() -> None:
                     record["status"] = "ok"
                 except Exception as exc:
                     record["error"] = f"{type(exc).__name__}: {exc}"
+                    print(
+                        f"[caption_error] rsid={rsid_str!r} "
+                        f"dataset_index={dataset_index}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    traceback.print_exception(exc, file=sys.stderr, chain=True)
 
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
                 f.flush()
