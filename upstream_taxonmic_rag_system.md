@@ -1,7 +1,9 @@
-# Upstream: `taxonomic-rag-system` (`feature/uq_draft`) — Repro & outputs
+# Upstream: `taxonomic-rag-system` (`feature/uq_draft`) 
 
 - **Branch**: `https://github.com/uoguelph-mlrg/taxonomic-rag-system/tree/feature/uq_draft`
-- **Goal**: help users reproduce runs on this branch (Rare Species dataset, Arthropoda subset) and understand **exactly what files are written** and what they contain.
+- **Supported pipelines on this branch**:
+  - **Simple RAG**: `src/taxonomic_rag_system/runs/rare_species_simp_rag.py`
+  - **Naive GPT-4o**: `src/taxonomic_rag_system/runs/rare_species_naive_gpt.py`
 
 ## Prerequisites (minimal)
 
@@ -12,35 +14,34 @@ git clone https://github.com/uoguelph-mlrg/taxonomic-rag-system.git
 cd taxonomic-rag-system
 git checkout feature/uq_draft
 
-uv sync --dev
+uv sync --extra gpu
 source .venv/bin/activate
 ```
 
 - **API keys (files in your home dir)** (loaded by `src/taxonomic_rag_system/utils/helpers.py:load_api_keys()`):
-  - **Required**: `~/.openai.key` (Simple/Advanced RAG, Naive GPT-4o)
-  - **Optional**: `~/.openrouter.key` (needed for Naive Gemini / OpenRouter models)
-  - **Optional**: `~/.cohere.key` (needed for Advanced RAG reranking)
+  - **Required**: `~/.openai.key`
 
 - **Dataset**: auto-downloaded and cached via HuggingFace `datasets.load_dataset("imageomics/rare-species")` (first run needs network).
   - The evaluator **filters to `phylum == "Arthropoda"` only** (see `src/taxonomic_rag_system/utils/evaluator.py`).
-
-- **Vector store (RAG only)**: `--vstore` points to a Chroma persistence directory (often contains `chroma.sqlite3`).
-  - Typical build command (from `README.md`):
-
-```bash
-python src/taxonomic_rag_system/preprocess/chunk_vectorize.py \
-  --source "data/documents" \
-  --pers_dir "data/vstore" \
-  --contextualize --write
-```
 
 ## Quickstart (small interval + write outputs)
 
 > Important: several entry scripts build filenames by string concatenation; **make sure your output directory ends with `/`**, e.g. `./outputs/`, otherwise you may get paths like `./outputsRS_...`.
 
+
+For Simple RAG:
 ```bash
-python -u src/taxonomic_rag_system/runs/rare_species_simp_rag.py \
+python src/taxonomic_rag_system/runs/rare_species_simp_rag.py \
   --vstore "/path/to/chroma" \
+  --output "./outputs/" \
+  --write \
+  --interval-start 0 \
+  --interval-end 10
+```
+
+For Naive GPT:
+```bash
+python src/taxonomic_rag_system/runs/rare_species_naive_gpt.py \
   --output "./outputs/" \
   --write \
   --interval-start 0 \
@@ -54,58 +55,7 @@ Intervals are applied in `src/taxonomic_rag_system/utils/evaluator.py` as:
 - `select(range(start, end))`, so **`interval-end` is exclusive**.
   - Example: `--interval-start 0 --interval-end 59` selects **0..58**.
 
-Also, because of Arthropoda filtering, the final sample count may be **< (end - start)**.
-
-## Entry points (how to run)
-
-### Simple RAG (gpt-4o + vectorstore)
-
-```bash
-python -u src/taxonomic_rag_system/runs/rare_species_simp_rag.py \
-  --vstore "/path/to/chroma" \
-  --output "./outputs/" \
-  --write \
-  --interval-start 0 --interval-end 100
-```
-
-Optional (multi-sampling; only generates extra multisample files when enabled):
-
-```bash
-python -u src/taxonomic_rag_system/runs/rare_species_simp_rag.py \
-  --vstore "/path/to/chroma" \
-  --output "./outputs/" \
-  --write \
-  --multi-sampling --num-samples 5 \
-  --interval-start 0 --interval-end 100
-```
-
-### Advanced RAG (mmr + rerank + multiquery)
-
-```bash
-python -u src/taxonomic_rag_system/runs/rare_species_adv_rag.py \
-  --vstore "/path/to/chroma" \
-  --output "./outputs/" \
-  --write \
-  --interval-start 0 --interval-end 100
-```
-
-### Naive GPT-4o (no retrieval; VLM-only classification)
-
-```bash
-python -u src/taxonomic_rag_system/runs/rare_species_naive_gpt.py \
-  --output_path "./outputs/" \
-  --write \
-  --interval-start 0 --interval-end 100
-```
-
-### Naive Gemini (OpenRouter; no retrieval)
-
-```bash
-python -u src/taxonomic_rag_system/runs/rare_species_naive_gemini.py \
-  --output_path "./outputs/" \
-  --write \
-  --interval-start 0 --interval-end 100
-```
+Note: 11982 is the last index of the rare-species dataset, so `--interval-end 11983` is the full dataset.
 
 ## Outputs (where they go, what they are)
 
@@ -143,63 +93,29 @@ All `*_tax_metrics_hierarchical_*.csv` are written by `helpers.py:write_overall_
 ### C) Prompt/Response logs (+ optional logprobs)
 
 - `*_prompt_response_pairs_*.jsonl`
-  - Simple/Advanced RAG: lines contain `rsid/prompt/response` (the script rewrites the JSONL to a minimal schema after writing).
-  - Naive GPT/Gemini: also writes a prompt/response-style JSONL (produced inside the script).
+  - Lines contain `rsid/prompt/response` (plus lightweight metadata) for run traceability.
 - `RS_simpRAG_logprobs_*.jsonl`
-  - Simple RAG writes token logprobs when `--write` is enabled.
-- `RS_advRAG_logprobs_*.jsonl`
-  - Advanced RAG writes token logprobs when `--write` is enabled.
+  - Simple RAG token-level logprobs JSONL for the final classification call (UQ).
 - `RS_naiveVLM_gpt_logprobs_*.jsonl`
-  - Naive GPT-4o writes token logprobs when `--write` is enabled.
-  - Naive Gemini does not currently write logprobs JSONL.
+  - Naive GPT-4o token-level logprobs JSONL for the classification call (UQ).
 
 ### D) Exact filename patterns per entry script
 
 #### Simple RAG (`rare_species_simp_rag.py`, with `--write`)
 
-- `RS_simpRAG_predictions_<date>_<time>.csv`
-- `RS_simpRAG_tax_metrics_hierarchical_<date>_<time>.csv`
-- `RS_simpRAG_rank_attempts_<date>_<time>.csv`
-- `RS_simpRAG_per_rank_binary_<date>_<time>.jsonl`
-- `RS_simpRAG_prompt_response_pairs_<date>_<time>.jsonl`
-- `RS_simpRAG_logprobs_<date>_<time>.jsonl`
+- `RS_simpRAG_predictions_<date>_<time>.csv`: per-sample taxonomic predictions (RSID + ranks; includes `BinaryAccuracy` when available).
+- `RS_simpRAG_tax_metrics_hierarchical_<date>_<time>.csv`: per-rank Accuracy/F1 plus hierarchical HP/HR/HF summary.
+- `RS_simpRAG_rank_attempts_<date>_<time>.csv`: how often each rank was attempted (non-`N/A`) across the run.
+- `RS_simpRAG_per_rank_binary_<date>_<time>.jsonl`: one line per (sample, rank) with strict binary correctness and hierarchical accuracy.
+- `RS_simpRAG_prompt_response_pairs_<date>_<time>.jsonl`: prompt/response trace for each sample (for auditing/replay).
+- `RS_simpRAG_logprobs_<date>_<time>.jsonl`: token-level logprobs for the final classification call (for UQ).
 
-Multi-sampling extras (only with `--multi-sampling`):
-
-- `RS_simpRAG_multisample_prompts_n{num_samples}_<date>_<time>.jsonl`
-- `RS_simpRAG_multisample_base_response_<date>_<time>.jsonl`
-- `RS_simpRAG_multisample_samples_n{num_samples}_<date>_<time>.jsonl`
-
-#### Advanced RAG (`rare_species_adv_rag.py`, with `--write`)
-
-- `RS_advRAG_predictions_<date>_<time>.csv`
-- `RS_advRAG_tax_metrics_hierarchical_<date>_<time>.csv`
-- `RS_advRAG_rank_attempts_<date>_<time>.csv`
-- `RS_advRAG_per_rank_binary_<date>_<time>.jsonl`
-- `RS_advRAG_prompt_response_pairs_<date>_<time>.jsonl`
-- `RS_advRAG_logprobs_<date>_<time>.jsonl`
 
 #### Naive GPT-4o (`rare_species_naive_gpt.py`, with `--write`)
 
-- `RS_naiveVLM_gpt_predictions_<date>_<time>.csv`
-- `RS_naiveVLM_gpt_tax_metrics_hierarchical_<date>_<time>.csv`
-- `RS_naiveVLM_gpt_rank_attempts_<date>_<time>.csv`
-- `RS_naiveVLM_gpt_per_rank_binary_<date>_<time>.jsonl`
-- `RS_naiveVLM_gpt_prompt_response_pairs_<date>_<time>.jsonl`
-- `RS_naiveVLM_gpt_logprobs_<date>_<time>.jsonl`
-
-#### Naive Gemini (`rare_species_naive_gemini.py`, with `--write`)
-
-- `RS_naiveVLM_gemini_predictions_<date>_<time>.csv`
-- `RS_naiveVLM_gemini_tax_metrics_hierarchical_<date>_<time>.csv`
-- `RS_naiveVLM_gemini_rank_attempts_<date>_<time>.csv`
-- `RS_naiveVLM_gemini_per_rank_binary_<date>_<time>.jsonl`
-- `RS_naiveVLM_gemini_prompt_response_pairs_<date>_<time>.jsonl`
-
-## (Optional) Extra outputs from Slurm/HPC submit scripts
-
-If you run via a wrapper like `submit_jobs_rag_model_uq_collect_data_killarney_l40s.sh`, you typically also get:
-
-- **SLURM stdout/stderr** logs, e.g. `slogs_.../%A.out`, `slogs_.../%A.err`
-- **GPU monitoring CSV** (if the wrapper runs `nvidia-smi -l ... -f ...`), e.g. `slogs_.../<SLURM_JOB_ID>-gpu.csv`
-
+- `RS_naiveVLM_gpt_predictions_<date>_<time>.csv`: per-sample taxonomic predictions from the naive VLM (includes `BinaryAccuracy`).
+- `RS_naiveVLM_gpt_tax_metrics_hierarchical_<date>_<time>.csv`: per-rank Accuracy/F1 plus hierarchical HP/HR/HF summary.
+- `RS_naiveVLM_gpt_rank_attempts_<date>_<time>.csv`: how often each rank was attempted (non-`N/A`) across the run.
+- `RS_naiveVLM_gpt_per_rank_binary_<date>_<time>.jsonl`: one line per (sample, rank) with strict binary correctness and hierarchical accuracy.
+- `RS_naiveVLM_gpt_prompt_response_pairs_<date>_<time>.jsonl`: prompt/response trace for each sample (for auditing/replay).
+- `RS_naiveVLM_gpt_logprobs_<date>_<time>.jsonl`: token-level logprobs for the classification call (for UQ).
