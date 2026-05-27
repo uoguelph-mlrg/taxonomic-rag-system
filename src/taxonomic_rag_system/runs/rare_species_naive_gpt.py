@@ -108,9 +108,16 @@ async def main() -> None:
     prompt_jsonl_name = str(
         output_path + f"RS_naiveVLM_gpt_prompt_response_pairs_{current_date}_{current_time}.jsonl"
     )
+    logprobs_jsonl_name = str(
+        output_path + f"RS_naiveVLM_gpt_logprobs_{current_date}_{current_time}.jsonl"
+    )
 
     # 1. Build Model
-    naive_model = NaiveVLModel(model="gpt-4o", openrouter=False)
+    naive_model = NaiveVLModel(
+        model="gpt-4o",
+        openrouter=False,
+        logprobs_log_path=logprobs_jsonl_name if write else None,
+    )
     # 2. RareSpecies Run
     rarespp_predictions = await naive_model.rarespecies_dataset_run(
         interval=interval, verbose=2

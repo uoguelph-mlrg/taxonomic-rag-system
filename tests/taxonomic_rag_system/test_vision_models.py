@@ -21,7 +21,7 @@ from taxonomic_rag_system.utils.vision_models import (
 
 
 @pytest.mark.asyncio
-async def test_tax_classifier_vlm_generate_taxonomy():
+async def test_tax_classifier_vlm_generate_taxonomy(tmp_path):
     """Test taxonomy generation using TaxClassifierVLM."""
     # Mock the response structure for JSON format
     mock_response = MagicMock()
@@ -41,18 +41,41 @@ async def test_tax_classifier_vlm_generate_taxonomy():
         }
     )
     mock_choice.message = mock_message
+    mock_choice.finish_reason = "stop"
+    mock_logprob_token = MagicMock()
+    mock_logprob_token.token = "{"
+    mock_logprob_token.logprob = -0.1
+    mock_logprob_token.top_logprobs = []
+    mock_logprobs = MagicMock()
+    mock_logprobs.content = [mock_logprob_token]
+    mock_choice.logprobs = mock_logprobs
     mock_response.choices = [mock_choice]
+    mock_response.model = "test-model"
+    mock_response.created = 123
+    mock_response.system_fingerprint = "fp"
 
     mock_cap = AsyncMock()
     mock_cap.chat.completions.create.return_value = mock_response
 
-    model = TaxClassifierVLM(cap=mock_cap, model="test-model")
-    result = await model.generate_taxonomy("mock_image_b64")
+    logprobs_path = tmp_path / "logprobs.jsonl"
+    model = TaxClassifierVLM(
+        cap=mock_cap,
+        model="test-model",
+        logprobs_path=str(logprobs_path),
+    )
+    result = await model.generate_taxonomy("mock_image_b64", rsid="RS1")
 
     assert result["Kingdom"] == "Animalia"
     assert result["Phylum"] == "Chordata"
     assert result["Class"] == "Mammalia"
     assert result["Order"] == "N/A"
+    assert logprobs_path.exists()
+    record = json.loads(logprobs_path.read_text(encoding="utf-8").strip())
+    assert record["rsid"] == "RS1"
+    assert record["tokens"]
+    create_kwargs = mock_cap.chat.completions.create.await_args.kwargs
+    assert create_kwargs["logprobs"] is True
+    assert create_kwargs["top_logprobs"] == 20
     # Verify Domain is filtered out if present
     assert "Domain" not in result
 

@@ -39,6 +39,10 @@ import instructor
 from openai import AsyncOpenAI
 
 from taxonomic_rag_system.utils.helpers import load_api_keys
+from taxonomic_rag_system.utils.logprobs_logging import (
+    DEFAULT_TOP_LOGPROBS,
+    append_logprobs_from_openai_completion,
+)
 
 # Local imports
 from taxonomic_rag_system.utils.out_models import Caption, Tax
@@ -106,7 +110,14 @@ class TaxClassifierVLM(VLM):
         generate_caption(image_b64): Generates a taxonomic classification for the image.
     """
 
-    def __init__(self, cap: Any = None, model: str = "", temp: float = 0) -> None:
+    def __init__(
+        self,
+        cap: Any = None,
+        model: str = "",
+        temp: float = 0,
+        logprobs_path: str | None = None,
+        top_logprobs: int = DEFAULT_TOP_LOGPROBS,
+    ) -> None:
         load_api_keys()
         if cap is None:
             cap = AsyncOpenAI(
@@ -118,6 +129,12 @@ class TaxClassifierVLM(VLM):
                 },
             )
         super().__init__(cap, model, temp)
+        self.logprobs_path = logprobs_path
+        self.top_logprobs = top_logprobs
+        self.user_prompt = (
+            "Provide a taxonomic classification for the primary organism "
+            "visible in the following image."
+        )
         self.system_prompt = (
             """
             You are an expert AI vision assistant to a taxonomist. Examine the image, analyze the primary organism's features, and provide a taxonomic classification.
@@ -144,19 +161,22 @@ class TaxClassifierVLM(VLM):
             + "..." * 256
         )
 
-    async def generate_taxonomy(self, image_b64: str) -> dict[str, str]:
+    async def generate_taxonomy(
+        self, image_b64: str, rsid: str | None = None
+    ) -> dict[str, str]:
         """
         Generate a taxonomic classification for the primary organism in the image.
 
         Args:
             image_b64: Base64 encoded image data.
+            rsid: Optional rare-species identifier for logprobs JSONL alignment.
 
         Returns
         -------
             A dictionary representing the taxonomic classification.
         """
         try:
-            return await self._taxonomist(image_b64)
+            return await self._taxonomist(image_b64, rsid=rsid)
         except Exception as e:
             print(f"Error during caption generation: {e}")
             return {
@@ -169,7 +189,9 @@ class TaxClassifierVLM(VLM):
                 "Species": "N/A",
             }
 
-    async def _taxonomist(self, image_b64: str) -> dict[str, str]:
+    async def _taxonomist(
+        self, image_b64: str, rsid: str | None = None
+    ) -> dict[str, str]:
         """
         Parse base64 image to taxonomic classification.
 
@@ -178,22 +200,23 @@ class TaxClassifierVLM(VLM):
 
         Args:
             image_b64: Base64 encoded image data.
+            rsid: Optional rare-species identifier for logprobs JSONL alignment.
 
         Returns
         -------
             A dictionary containing the taxonomic classification.
         """
-        raw_resp = await self.cap.chat.completions.create(
-            model=self.model,
-            temperature=self.temp,
-            messages=[
+        create_kwargs: dict[str, Any] = {
+            "model": self.model,
+            "temperature": self.temp,
+            "messages": [
                 {"role": "system", "content": self.system_prompt},
                 {
                     "role": "user",
                     "content": [
                         {
                             "type": "text",
-                            "text": "Provide a taxonomic classification for the primary organism visible in the following image.",
+                            "text": self.user_prompt,
                         },
                         {
                             "type": "image_url",
@@ -205,11 +228,31 @@ class TaxClassifierVLM(VLM):
                     ],
                 },
             ],
-            response_format={"type": "json_object"},
-        )
+            "response_format": {"type": "json_object"},
+        }
+        if self.logprobs_path:
+            create_kwargs["logprobs"] = True
+            create_kwargs["top_logprobs"] = self.top_logprobs
+
+        raw_resp = await self.cap.chat.completions.create(**create_kwargs)
 
         # Log the raw response for inspection
         logging.debug(f"Raw response: {raw_resp}")
+
+        if self.logprobs_path:
+            prompt_text = f"{self.system_prompt}\n\n{self.user_prompt}"
+            append_logprobs_from_openai_completion(
+                target_path=self.logprobs_path,
+                prompt=prompt_text,
+                completion=raw_resp,
+                rsid=rsid,
+                gen_params_override={
+                    "logprobs": True,
+                    "temperature": self.temp,
+                    "top_p": 1,
+                    "top_logprobs": self.top_logprobs,
+                },
+            )
 
         # Extract the JSON string
         json_content = raw_resp.choices[0].message.content

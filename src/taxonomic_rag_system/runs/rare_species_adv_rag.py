@@ -126,6 +126,9 @@ async def main() -> None:
     prompt_jsonl_name = str(
         output_path + f"RS_advRAG_prompt_response_pairs_{current_date}_{current_time}.jsonl"
     )
+    logprobs_jsonl_name = str(
+        output_path + f"RS_advRAG_logprobs_{current_date}_{current_time}.jsonl"
+    )
 
     # 1. Build Model
     model = ImageRAGModel(
@@ -136,6 +139,7 @@ async def main() -> None:
         rerank=True,
         multiquery=True,
         prompt_log_path=prompt_jsonl_name if write else None,
+        logprobs_log_path=logprobs_jsonl_name if write else None,
     )
     print(f"Device: {model.get_device()}")
     # 2. RareSpecies Run

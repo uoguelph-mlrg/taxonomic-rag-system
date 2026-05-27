@@ -581,14 +581,22 @@ class NaiveVLModel:
         self,
         model: str = "google/gemini-2.0-flash-001",
         openrouter: bool = True,
+        logprobs_log_path: Optional[str] = None,
     ):
         load_api_keys()
         cap = AsyncOpenAI() if not openrouter else None
         self.image_processor = ImageProcessor()
-        self.model = TaxClassifierVLM(model=model, cap=cap)
+        self.model = TaxClassifierVLM(
+            model=model,
+            cap=cap,
+            logprobs_path=logprobs_log_path,
+        )
 
     async def query(
-        self, image_path: Optional[str] = None, image_obj: Optional[Any] = None
+        self,
+        image_path: Optional[str] = None,
+        image_obj: Optional[Any] = None,
+        rsid: Optional[str] = None,
     ) -> dict[str, str]:
         """
         Query the VLM to generate a classification guess for an image.
@@ -609,7 +617,7 @@ class NaiveVLModel:
                 image_path=image_path, image_obj=image_obj
             )
             print("querying...")
-            guess_class = await self.model.generate_taxonomy(image_b64)
+            guess_class = await self.model.generate_taxonomy(image_b64, rsid=rsid)
             guess_class = {
                 level: guess_class[level] for level in guess_class if level != "Domain"
             }
@@ -654,7 +662,7 @@ class NaiveVLModel:
             tasks, true_classes, batch = [], [], []
             # Naive VLM Tax classifier on each image
             for img_obj, class_dict in zip(image_objs, class_dicts):
-                tasks.append(self.query(image_obj=img_obj))
+                tasks.append(self.query(image_obj=img_obj, rsid=class_dict.get("RSID")))
                 true_classes.append(class_dict)
             # Run the VLM queries in parallel
             rag_responses = await asyncio.gather(*tasks)

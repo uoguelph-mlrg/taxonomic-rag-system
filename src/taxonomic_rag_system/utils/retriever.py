@@ -44,6 +44,9 @@ from langchain_openai import ChatOpenAI
 
 # Local imports
 from taxonomic_rag_system.utils.helpers import format_docs, load_api_keys, unique_docs
+from taxonomic_rag_system.utils.logprobs_logging import (
+    append_logprobs_from_langchain_message,
+)
 from taxonomic_rag_system.utils.out_models import MultiQuery, TaxBiodiversity
 
 
@@ -683,236 +686,21 @@ class RAGChainBuilder:
         schema_version: str = "logprob_v1",
         gen_params_override: dict[str, Any] | None = None,
     ) -> None:
-        """Append a token-level logprobs record to the configured JSONL file (if any).
-
-        The record includes:
-          - rsid, model, created, finish_reason
-          - response_text and its sha256 hash
-          - tokens with per-token logprob and char/byte offsets
-          - section mappings: top-level fields and classification ranks
-        """
+        """Append a token-level logprobs record to the configured JSONL file (if any)."""
         target_path = path_override or getattr(self, "_logprobs_path", None)
         if not target_path:
-            return  # Logging disabled
-
-        try:
-            # Ensure parent directory exists
-            Path(target_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
-
-            # Extract metadata and tokens from AIMessage
-            full_text = getattr(ai_message, "content", "") or ""
-            meta = getattr(ai_message, "response_metadata", {}) or {}
-            model_name = meta.get("model_name") or meta.get("model") or ""
-            created = meta.get("created") or None
-            finish_reason = meta.get("finish_reason") or (meta.get("choices", [{}])[0].get("finish_reason") if isinstance(meta.get("choices"), list) and meta.get("choices") else None)
-            system_fingerprint = meta.get("system_fingerprint") or None
-
-            # Try to extract tokens (and top candidates) from various possible shapes
-            tokens_src = []
-            try:
-                lp = meta.get("logprobs")
-                if isinstance(lp, dict) and isinstance(lp.get("content"), list):
-                    tokens_src = lp["content"]
-                elif isinstance(meta.get("choices"), list):
-                    ch0 = meta["choices"][0] if meta["choices"] else {}
-                    lp2 = ch0.get("logprobs") if isinstance(ch0, dict) else None
-                    if isinstance(lp2, dict) and isinstance(lp2.get("content"), list):
-                        tokens_src = lp2["content"]
-            except Exception:
-                tokens_src = []
-
-            # Build per-token records and compute offsets
-            token_records: list[dict[str, object]] = []
-            char_cursor = 0
-            byte_cursor = 0
-            rebuilt = []
-            for i, tk in enumerate(tokens_src):
-                tok = tk.get("token") if isinstance(tk, dict) else None
-                lpv = tk.get("logprob") if isinstance(tk, dict) else None
-                top_list = None
-                try:
-                    raw_top = tk.get("top_logprobs") if isinstance(tk, dict) else None
-                    if isinstance(raw_top, list):
-                        # Normalize to [{"t": string, "lp": float}, ...]
-                        top_list = []
-                        for cand in raw_top:
-                            if isinstance(cand, dict):
-                                ctok = cand.get("token")
-                                clpv = cand.get("logprob")
-                                if ctok is not None and clpv is not None:
-                                    top_list.append({"t": ctok, "lp": clpv})
-                except Exception:
-                    top_list = None
-                if tok is None:
-                    continue
-                s_char = char_cursor
-                s_byte = byte_cursor
-                rebuilt.append(tok)
-                char_cursor += len(tok)
-                byte_cursor += len(tok.encode("utf-8"))
-                token_records.append({
-                    "idx": i,
-                    "t": tok,
-                    "lp": lpv,
-                    "char_s": s_char,
-                    "char_e": char_cursor,
-                    "byte_s": s_byte,
-                    "byte_e": byte_cursor,
-                    "top": top_list,
-                })
-
-            # Validate reconstructed text vs full_text (best effort)
-            rebuilt_text = "".join(rebuilt)
-            warnings: list[str] = []
-            if full_text and rebuilt_text and rebuilt_text != full_text:
-                warnings.append("rebuilt_text_mismatch")
-
-            # Quality stats: missing token logprobs ratio
-            total_tokens = len(token_records)
-            missing_token_count = 0
-            for r in token_records:
-                lpv_r = r.get("lp")
-                if lpv_r is None or lpv_r == -9999.0:
-                    missing_token_count += 1
-            missing_token_ratio = (missing_token_count / total_tokens) if total_tokens else 0.0
-
-            # Section mapping helpers
-            def _find_json_string_value_span(raw: str, key: str, start_at: int = 0, end_at: int | None = None):
-                end_lim = len(raw) if end_at is None else end_at
-                kq = f'"{key}"'
-                i = raw.find(kq, start_at, end_lim)
-                if i == -1:
-                    return None
-                j = raw.find(":", i + len(kq), end_lim)
-                if j == -1:
-                    return None
-                j += 1
-                while j < end_lim and raw[j] in " \t\r\n":
-                    j += 1
-                if j >= end_lim or raw[j] != '"':
-                    return None
-                val_start = j + 1
-                p = val_start
-                while p < end_lim:
-                    c = raw[p]
-                    if c == "\\":
-                        p += 2
-                        continue
-                    if c == '"':
-                        return (val_start, p)
-                    p += 1
-                return None
-
-            def _find_json_object_span(raw: str, key: str, start_at: int = 0):
-                kq = f'"{key}"'
-                i = raw.find(kq, start_at)
-                if i == -1:
-                    return None
-                j = raw.find(":", i + len(kq))
-                if j == -1:
-                    return None
-                j += 1
-                while j < len(raw) and raw[j] in " \t\r\n":
-                    j += 1
-                if j >= len(raw) or raw[j] != "{":
-                    return None
-                # Brace matching with string awareness
-                depth = 0
-                in_str = False
-                p = j
-                while p < len(raw):
-                    ch = raw[p]
-                    if in_str:
-                        if ch == "\\":
-                            p += 2
-                            continue
-                        if ch == '"':
-                            in_str = False
-                        p += 1
-                        continue
-                    if ch == '"':
-                        in_str = True
-                        p += 1
-                        continue
-                    if ch == "{":
-                        depth += 1
-                    elif ch == "}":
-                        depth -= 1
-                        if depth == 0:
-                            return (j, p + 1)
-                    p += 1
-                return None
-
-            def _token_range_for_char_range(recs: list[dict[str, object]], cr: tuple[int, int] | None):
-                if not cr:
-                    return None
-                s_char, e_char = cr
-                idxs: list[int] = []
-                for r in recs:
-                    rs = int(r["char_s"])  # type: ignore[arg-type]
-                    re = int(r["char_e"])  # type: ignore[arg-type]
-                    if re > s_char and rs < e_char:
-                        idxs.append(int(r["idx"]))  # type: ignore[arg-type]
-                if not idxs:
-                    return None
-                return (min(idxs), max(idxs) + 1)
-
-            sections: dict[str, object] = {}
-            # Top-level string fields
-            for key in ("ancestral", "specific", "commentary", "bio_knowledge"):
-                cr = _find_json_string_value_span(full_text, key)
-                tr = _token_range_for_char_range(token_records, cr) if token_records else None
-                if cr is not None:
-                    sections[key] = {"char_range": list(cr), "token_range": list(tr) if tr else None}
-
-            # classification object and its ranks
-            class_obj_span = _find_json_object_span(full_text, "classification")
-            class_map: dict[str, object] = {}
-            if class_obj_span is not None:
-                c_s, c_e = class_obj_span
-                for rk in ("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species"):
-                    scr = _find_json_string_value_span(full_text, rk, start_at=c_s, end_at=c_e)
-                    tr = _token_range_for_char_range(token_records, scr) if token_records else None
-                    if scr is not None:
-                        class_map[rk] = {"char_range": list(scr), "token_range": list(tr) if tr else None}
-                sections["classification"] = class_map
-
-            # Build record
-            resp_hash = "sha256:" + hashlib.sha256(full_text.encode("utf-8")).hexdigest()
-            record = {
-                "schema_version": schema_version,
-                "rsid": rsid,
-                "prompt_id": prompt_id,
-                "sample_idx": sample_idx,
-                "sample_seed": sample_seed,
-                "model": model_name,
-                "created": created,
-                "finish_reason": finish_reason,
-                "system_fingerprint": system_fingerprint,
-                "response_text": full_text,
-                "response_text_hash": resp_hash,
-                "gen_params": gen_params_override
-                or {
-                    "logprobs": True,
-                    "temperature": 1,
-                    "top_p": 1,
-                    "seed": DEFAULT_LLM_SEED,
-                    "top_logprobs": 20,
-                },
-                "tokens": token_records,
-                "sections": sections,
-                "quality": {
-                    "missing_token_count (lp=-9999.0)": missing_token_count,
-                    "total_token_count": total_tokens,
-                    "missing_token_ratio": missing_token_ratio,
-                },
-                "warnings": warnings,
-            }
-
-            with open(target_path, "a", encoding="utf-8") as fp:
-                fp.write(json.dumps(record, ensure_ascii=False) + "\n")
-        except Exception as log_err:
-            logger.warning(f"Failed to log logprobs: {log_err}")
+            return
+        append_logprobs_from_langchain_message(
+            target_path=str(target_path),
+            prompt=prompt,
+            ai_message=ai_message,
+            rsid=rsid,
+            prompt_id=prompt_id,
+            sample_idx=sample_idx,
+            sample_seed=sample_seed,
+            schema_version=schema_version,
+            gen_params_override=gen_params_override,
+        )
 
 class BaseRetriever:
     """Base class for document retriever against a Chroma collection."""
