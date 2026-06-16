@@ -3,7 +3,7 @@ Run a local open-source LLM on stored SimpleRAG prompts.
 
 This runner bypasses the VLM and retriever stages by reading an existing
 `RS_simpRAG_prompt_response_pairs_*.jsonl` file and feeding the stored `prompt`
-directly into a local Hugging Face model (e.g., Qwen3).
+directly into a local Hugging Face model (e.g., Qwen3.6-27B).
 
 Outputs are written in the same schemas as the SimpleRAG pipeline outputs,
 excluding logprobs:
@@ -87,20 +87,20 @@ def _parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--model-id",
         type=str,
-        required=True,
-        help="Hugging Face model id or local path for Qwen3.",
+        default="Qwen/Qwen3.6-27B",
+        help="Hugging Face model id or local path (default: Qwen/Qwen3.6-27B).",
     )
     parser.add_argument(
         "--max-new-tokens",
         type=int,
-        default=None,
-        help="Override the model default max_new_tokens. Omit to use the model default.",
+        default=4096,
+        help="Max new tokens for generation (default: 4096).",
     )
     parser.add_argument(
         "--temperature",
         type=float,
-        default=None,
-        help="Override the model default temperature. Omit to use the model default.",
+        default=0.0,
+        help="Sampling temperature; 0 disables sampling (default: 0).",
     )
     parser.add_argument(
         "--top-p",
@@ -120,8 +120,9 @@ def _parse_arguments() -> argparse.Namespace:
     parser.add_argument("--torch-dtype", type=str, default="auto")
     parser.add_argument(
         "--trust-remote-code",
-        action="store_true",
-        help="Pass trust_remote_code=True when loading the model.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Pass trust_remote_code when loading the model (default: True).",
     )
     return parser.parse_args()
 
@@ -277,7 +278,8 @@ def main() -> None:  # noqa: PLR0912, PLR0915
             torch_dtype=args.torch_dtype,
             trust_remote_code=bool(args.trust_remote_code),
             return_full_text=False,
-        )
+        ),
+        pipeline_kwargs={"enable_thinking": False},
     )
     print(f"Writing outputs under: {output_path or './'}")
 

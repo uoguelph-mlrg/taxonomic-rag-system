@@ -36,7 +36,7 @@ gpu = [
 vlm = [
     "accelerate>=1.0.0",
     "safetensors>=0.5.0",
-    "transformers>=4.57.0",
+    "transformers>=5.2.0",
 ]
 
 [[tool.uv.index]]

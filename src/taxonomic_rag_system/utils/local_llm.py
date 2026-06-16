@@ -96,6 +96,31 @@ def normalize_device_map(device_map: str | dict[str, Any]) -> str | dict[str, An
     return s
 
 
+def _load_causal_lm(model_id: str, mk: dict[str, Any]) -> Any:
+    """Load a causal LM, with a Qwen3.5-family fallback when AutoModel fails."""
+    from transformers import AutoModelForCausalLM
+
+    try:
+        return AutoModelForCausalLM.from_pretrained(model_id, **mk)
+    except (ValueError, OSError, TypeError) as exc:
+        try:
+            from transformers import Qwen3_5ForCausalLM
+
+            return Qwen3_5ForCausalLM.from_pretrained(model_id, **mk)
+        except Exception:
+            raise exc
+
+
+def _apply_thinking_disable(model: Any, pipeline_kwargs: dict[str, Any]) -> None:
+    """Disable Qwen thinking mode when requested via pipeline kwargs."""
+    if pipeline_kwargs.get("enable_thinking") is not False:
+        return
+    gen_cfg = getattr(model, "generation_config", None)
+    if gen_cfg is not None and hasattr(gen_cfg, "enable_thinking"):
+        gen_cfg.enable_thinking = False
+    pipeline_kwargs.pop("enable_thinking", None)
+
+
 def build_hf_textgen_llm(
     *,
     cfg: LocalLLMConfig,
@@ -128,7 +153,6 @@ def build_hf_textgen_llm(
     import importlib
 
     from transformers import (
-        AutoModelForCausalLM,
         AutoTokenizer,
         pipeline,
     )
@@ -142,14 +166,19 @@ def build_hf_textgen_llm(
     mk: dict[str, Any] = dict(model_kwargs or {})
     pk: dict[str, Any] = dict(pipeline_kwargs or {})
 
-    tokenizer = AutoTokenizer.from_pretrained(cfg.model_id, use_fast=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        cfg.model_id,
+        use_fast=True,
+        trust_remote_code=cfg.trust_remote_code,
+    )
 
     effective_dm = mk.pop("device_map", cfg.device_map)
     resolved_dm = normalize_device_map(effective_dm)
     mk["device_map"] = resolved_dm
     mk.setdefault("torch_dtype", cfg.torch_dtype)
     mk.setdefault("trust_remote_code", cfg.trust_remote_code)
-    model = AutoModelForCausalLM.from_pretrained(cfg.model_id, **mk)
+    model = _load_causal_lm(cfg.model_id, mk)
+    _apply_thinking_disable(model, pk)
 
     pk = _apply_generation_defaults(pk, cfg)
     # Put pipeline inputs on GPU 0 when the full model uses {"": 0}.
